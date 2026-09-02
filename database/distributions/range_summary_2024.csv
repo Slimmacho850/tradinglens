@@ -1,0 +1,4 @@
+range_type,total_events,dr_rule_true_pct,retraced_into_dr_pct,outside_dr_pct,median_ext_sd,median_max_ret_sd,median_ret_before_extreme_sd,median_ret_after_05_sd
+ADR,6671,70.69,82.57,41.75,1.23,0.56,0.0,0.32
+ODR,7662,75.4,81.88,40.08,1.05,0.5,0.0,0.26
+RDR,7399,77.54,79.2,39.45,0.93,0.41,0.0,0.1

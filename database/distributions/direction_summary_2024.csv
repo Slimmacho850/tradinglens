@@ -1,0 +1,3 @@
+direction,total_events,dr_rule_true_pct,retraced_into_dr_pct,outside_dr_pct,median_ext_sd,median_max_ret_sd
+LONG,11751,76.9,79.75,42.42,1.0,0.42
+SHORT,9981,72.08,82.87,37.97,1.12,0.56
