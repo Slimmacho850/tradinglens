@@ -24,6 +24,8 @@ import streamlit as st
 # ============================================================
 
 CONTRACT_SPECS: Dict[str, Dict[str, Any]] = {
+    "GC": {"name": "Gold Futures (GC / XAU)", "point_value": 100.0, "tick_size": 0.10, "is_micro": False},
+    "MGC": {"name": "Micro Gold Futures (MGC)", "point_value": 10.0, "tick_size": 0.10, "is_micro": True},
     "NQ": {"name": "E-mini Nasdaq 100", "point_value": 20.0, "tick_size": 0.25, "is_micro": False},
     "ES": {"name": "E-mini S&P 500", "point_value": 50.0, "tick_size": 0.25, "is_micro": False},
     "MNQ": {"name": "Micro E-mini Nasdaq 100", "point_value": 2.0, "tick_size": 0.25, "is_micro": True},

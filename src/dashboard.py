@@ -531,9 +531,11 @@ def main():
     with st.sidebar:
         st.markdown("### Global Settings")
 
-        instrument_options = ["Emini S&P", "Nasdaq (NQ)", "All Instruments"]
+        instrument_options = ["Gold (GC / XAU)", "Nasdaq (NQ)", "Emini S&P", "All Instruments"]
         instrument_choice = st.selectbox("Select Instrument", instrument_options, index=0)
-        if instrument_choice == "Emini S&P":
+        if "Gold" in instrument_choice or "GC" in instrument_choice:
+            instrument = "GC"
+        elif instrument_choice == "Emini S&P":
             instrument = "ES"
         elif instrument_choice == "Nasdaq (NQ)":
             instrument = "NQ"
@@ -774,15 +776,32 @@ def main():
         calc_col1, calc_col2 = st.columns([1.8, 3.2])
 
         with calc_col1:
-            st.markdown("#### 1. Session Setup")
-            live_instrument = st.selectbox("Trading Contract", ["NQ (E-mini)", "MNQ (Micro)", "ES (E-mini)", "MES (Micro)"], index=0)
-            live_sym = "NQ" if "NQ" in live_instrument and "MNQ" not in live_instrument else ("MNQ" if "MNQ" in live_instrument else ("ES" if "ES" in live_instrument and "MES" not in live_instrument else "MES"))
+            live_instrument = st.selectbox("Trading Contract", ["Gold (GC - Standard)", "Gold (MGC - Micro)", "NQ (E-mini)", "MNQ (Micro)", "ES (E-mini)", "MES (Micro)"], index=0)
+            if "MGC" in live_instrument:
+                live_sym = "MGC"
+            elif "GC" in live_instrument or "Gold" in live_instrument:
+                live_sym = "GC"
+            elif "MNQ" in live_instrument:
+                live_sym = "MNQ"
+            elif "NQ" in live_instrument:
+                live_sym = "NQ"
+            elif "MES" in live_instrument:
+                live_sym = "MES"
+            else:
+                live_sym = "ES"
 
             direction_input = st.radio("Confirmation Direction", ["LONG ↗", "SHORT ↘"], index=0, horizontal=True)
             active_dir = "LONG" if "LONG" in direction_input else "SHORT"
 
-            default_high = 20150.0 if "NQ" in live_sym else 5520.0
-            default_low = 20080.0 if "NQ" in live_sym else 5500.0
+            if "GC" in live_sym or "MGC" in live_sym:
+                default_high = 2750.0
+                default_low = 2735.0
+            elif "NQ" in live_sym or "MNQ" in live_sym:
+                default_high = 20150.0
+                default_low = 20080.0
+            else:
+                default_high = 5520.0
+                default_low = 5500.0
 
             inp_col1, inp_col2 = st.columns(2)
             with inp_col1:

@@ -19,26 +19,29 @@ def test_bucket():
 
 def test_filters_and_metrics():
     df = pd.DataFrame({
-        "instrument": ["NQ", "NQ", "ES"],
-        "trading_date": ["2024-01-01", "2024-01-02", "2025-01-01"],
-        "day_of_week": ["Monday", "Tuesday", "Wednesday"],
-        "range_type": ["ADR", "RDR", "ADR"],
-        "confirmed": [True, True, True],
-        "direction": ["LONG", "SHORT", "LONG"],
-        "confirmation_time": ["2024-01-01 10:30", "2024-01-02 10:45", "2025-01-01 04:00"],
-        "dr_rule_true": [True, False, True],
-        "retraced_into_dr": [True, True, False],
-        "outside_dr_closed": [True, False, False],
-        "extension_sd": [1.0, 2.0, 3.0],
-        "max_retracement_sd": [0.4, 0.8, 1.0],
-        "retracement_before_extreme_sd": [0.1, 0.2, 0.3],
-        "retracement_after_05_sd": [0.3, 0.5, 0.6],
-        "mean_sd_up": [1.0, 0.5, 3.0],
-        "mean_sd_down": [0.2, 2.0, 0.1],
+        "instrument": ["NQ", "NQ", "ES", "GC"],
+        "trading_date": ["2024-01-01", "2024-01-02", "2025-01-01", "2025-01-02"],
+        "day_of_week": ["Monday", "Tuesday", "Wednesday", "Thursday"],
+        "range_type": ["ADR", "RDR", "ADR", "ODR"],
+        "confirmed": [True, True, True, True],
+        "direction": ["LONG", "SHORT", "LONG", "LONG"],
+        "confirmation_time": ["2024-01-01 10:30", "2024-01-02 10:45", "2025-01-01 04:00", "2025-01-02 04:15"],
+        "dr_rule_true": [True, False, True, True],
+        "retraced_into_dr": [True, True, False, True],
+        "outside_dr_closed": [True, False, False, True],
+        "extension_sd": [1.0, 2.0, 3.0, 1.5],
+        "max_retracement_sd": [0.4, 0.8, 1.0, 0.5],
+        "retracement_before_extreme_sd": [0.1, 0.2, 0.3, 0.2],
+        "retracement_after_05_sd": [0.3, 0.5, 0.6, 0.4],
+        "mean_sd_up": [1.0, 0.5, 3.0, 2.0],
+        "mean_sd_down": [0.2, 2.0, 0.1, 0.3],
     })
     df = normalize_columns(df)
     out = filter_data(df, instrument="NQ", day_filter="Monday", range_type="ADR", direction="LONG")
     assert len(out) == 1
+
+    out_gc = filter_data(df, instrument="GC", range_type="ODR")
+    assert len(out_gc) == 1
     
     kpis = calc_overview_kpis(out, out)
     assert kpis["Conf. Long (%)"] == "100.0%"

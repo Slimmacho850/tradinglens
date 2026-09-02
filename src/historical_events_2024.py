@@ -52,6 +52,8 @@ SESSIONS = {
 
 def infer_instrument(filename: str) -> str:
     upper = Path(filename).stem.upper()
+    if any(k in upper for k in ["XAUUSD", "GOLD", "GC", "XAU"]):
+        return "GC"
     if any(k in upper for k in ["NSXUSD", "NQ", "MNQ", "NAS100", "US100"]):
         return "NQ"
     if any(k in upper for k in ["SPXUSD", "ES", "MES", "SP500", "US500", "USA500"]):

@@ -56,6 +56,23 @@ def test_trade_calculator():
     assert plan_short.stop_price == 5500.0
     print("  ✓ Short Plan validated successfully")
 
+    plan_gold = calculate_trade_plan(
+        dr_high=2750.0,
+        dr_low=2730.0,
+        direction="LONG",
+        entry_retrace_sd=0.5,
+        stop_loss_sd=1.0,
+        instrument="GC",
+        account_size=25000.0,
+        risk_pct=1.0,
+    )
+    assert plan_gold.dr_range == 20.0
+    assert plan_gold.entry_price == 2740.0
+    assert plan_gold.stop_price == 2730.0
+    assert plan_gold.stop_distance_pts == 10.0
+    assert plan_gold.contracts >= 1
+    print("  ✓ Gold (GC) Plan validated successfully")
+
 
 def test_backtester_and_curves():
     master_file = DATABASE_DIR / "events_master.csv"
