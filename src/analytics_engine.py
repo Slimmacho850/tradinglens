@@ -23,18 +23,26 @@ import streamlit as st
 # POINT VALUES & CONTRACT SPECIFICATIONS
 # ============================================================
 
+# ============================================================
+# POINT VALUES & CONTRACT SPECIFICATIONS
+# ============================================================
+
 CONTRACT_SPECS: Dict[str, Dict[str, Any]] = {
     "GC": {"name": "Gold Futures (GC / XAU)", "point_value": 100.0, "tick_size": 0.10, "is_micro": False},
     "MGC": {"name": "Micro Gold Futures (MGC)", "point_value": 10.0, "tick_size": 0.10, "is_micro": True},
-    "NQ": {"name": "E-mini Nasdaq 100", "point_value": 20.0, "tick_size": 0.25, "is_micro": False},
-    "ES": {"name": "E-mini S&P 500", "point_value": 50.0, "tick_size": 0.25, "is_micro": False},
-    "MNQ": {"name": "Micro E-mini Nasdaq 100", "point_value": 2.0, "tick_size": 0.25, "is_micro": True},
-    "MES": {"name": "Micro E-mini S&P 500", "point_value": 5.0, "tick_size": 0.25, "is_micro": True},
+    "NQ": {"name": "E-mini Nasdaq 100 (NQ)", "point_value": 20.0, "tick_size": 0.25, "is_micro": False},
+    "MNQ": {"name": "Micro E-mini Nasdaq 100 (MNQ)", "point_value": 2.0, "tick_size": 0.25, "is_micro": True},
+    "ES": {"name": "E-mini S&P 500 (ES)", "point_value": 50.0, "tick_size": 0.25, "is_micro": False},
+    "MES": {"name": "Micro E-mini S&P 500 (MES)", "point_value": 5.0, "tick_size": 0.25, "is_micro": True},
+    "YM": {"name": "E-mini Dow Jones (YM)", "point_value": 5.0, "tick_size": 1.00, "is_micro": False},
+    "MYM": {"name": "Micro E-mini Dow Jones (MYM)", "point_value": 0.50, "tick_size": 1.00, "is_micro": True},
+    "6E": {"name": "Euro FX Futures (6E / EURUSD)", "point_value": 125000.0, "tick_size": 0.00005, "is_micro": False},
+    "EURUSD": {"name": "EUR/USD Spot FX ($10/pip)", "point_value": 100000.0, "tick_size": 0.0001, "is_micro": False},
 }
 
 
 # ============================================================
-# 1. LIVE SESSION TRADE CALCULATOR
+# 1. LIVE SESSION TRADE CALCULATOR & DR DRIVE HUD
 # ============================================================
 
 @dataclass
@@ -48,6 +56,7 @@ class TradePlan:
     risk_dollars: float
     contracts: int
     targets: List[Dict[str, Any]]
+    false_day_targets: List[Dict[str, Any]]
     historical_win_rate: float
     expected_value_dollars: float
 
@@ -56,7 +65,7 @@ def calculate_trade_plan(
     dr_high: float,
     dr_low: float,
     direction: str,
-    entry_retrace_sd: float = 0.5,  # 0.0 = DR boundary, 0.5 = Mid-DR
+    entry_retrace_sd: float = 0.5,  # 0.0 = DR boundary, 0.5 = Mid-DR, 0.75 = 75% Retracement
     stop_loss_sd: float = 1.0,      # 1.0 = Opposite DR
     instrument: str = "NQ",
     account_size: float = 25000.0,
@@ -64,7 +73,8 @@ def calculate_trade_plan(
     historical_stats: Optional[Dict[str, float]] = None,
 ) -> TradePlan:
     """
-    Computes exact prices, contract sizing, R:R ratios, and target levels for a live trade setup.
+    Computes exact prices, contract sizing, R:R ratios, take-profit targets,
+    and False Day Playbook projections for a live session setup.
     """
     dr_range = max(0.25, dr_high - dr_low)
     direction_upper = direction.upper()
@@ -80,7 +90,7 @@ def calculate_trade_plan(
     stop_distance_pts = max(0.25, abs(entry_price - stop_price))
 
     # Contract Specifications
-    spec = CONTRACT_SPECS.get(instrument, CONTRACT_SPECS["NQ"])
+    spec = CONTRACT_SPECS.get(instrument, CONTRACT_SPECS.get("NQ", {"point_value": 20.0}))
     point_value = spec["point_value"]
 
     # Position Sizing
@@ -89,7 +99,7 @@ def calculate_trade_plan(
     contracts = max(1, int(math.floor(risk_dollars / risk_per_contract)))
     actual_risk = contracts * risk_per_contract
 
-    # Target Tiers
+    # Target Tiers (Standard Take-Profits)
     target_tiers_sd = [0.2, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0]
     targets: List[Dict[str, Any]] = []
 
@@ -104,7 +114,7 @@ def calculate_trade_plan(
         rr_ratio = gain_pts / stop_distance_pts if stop_distance_pts > 0 else 0.0
 
         targets.append({
-            "sd_level": f"{sd:.1f}x SD",
+            "sd_level": f"{sd:.1f}x SD" if sd != 0.5 else "0.5x SD (Low-Hanging Fruit)",
             "sd_val": sd,
             "tp_price": round(tp_price, 2),
             "gain_pts": round(gain_pts, 2),
@@ -112,18 +122,36 @@ def calculate_trade_plan(
             "rr_ratio": round(rr_ratio, 2),
         })
 
-    # Historical win rate approximation from provided stats or baseline
+    # False Day Playbook Targets (When DR rule breaks on opposite side)
+    false_day_sd_levels = [1.5, 2.0, 2.2, 2.5]
+    false_day_targets: List[Dict[str, Any]] = []
+
+    for fsd in false_day_sd_levels:
+        if direction_upper == "LONG":
+            # Broken down to short side
+            false_tp = dr_high - (fsd * dr_range)
+        else:
+            # Broken up to long side
+            false_tp = dr_low + (fsd * dr_range)
+
+        false_day_targets.append({
+            "level": f"{fsd:.1f}x SD (False Day Target)",
+            "price": round(false_tp, 2),
+            "distance_pts": round(abs(false_tp - (dr_low if direction_upper == 'LONG' else dr_high)), 2),
+        })
+
     win_rate = historical_stats.get("win_rate_05", 81.0) if historical_stats else 81.0
     ev_dollars = ((win_rate / 100.0) * targets[1]["gain_dollars"]) - ((1 - (win_rate / 100.0)) * actual_risk)
 
     entry_labels = {
-        0.0: "DR Level (0.0x)",
+        0.0: "DR Level (0.00x)",
         0.25: "25% Retracement (0.25x)",
-        0.5: "Mid-DR (0.50x)",
+        0.5: "Mid-DR (0.50x Retracement)",
         0.75: "75% Retracement (0.75x)",
-        1.0: "Opposite DR (1.00x)",
+        0.8: "80% Retracement (0.80x)",
+        1.0: "Opposite DR (1.00x SD)",
     }
-    entry_label = entry_labels.get(round(entry_retrace_sd, 2), f"{entry_retrace_sd:.2f}x SD")
+    entry_label = entry_labels.get(round(entry_retrace_sd, 2), f"{entry_retrace_sd:.2f}x Retracement")
 
     return TradePlan(
         dr_range=round(dr_range, 2),
@@ -135,6 +163,7 @@ def calculate_trade_plan(
         risk_dollars=round(actual_risk, 2),
         contracts=contracts,
         targets=targets,
+        false_day_targets=false_day_targets,
         historical_win_rate=round(win_rate, 1),
         expected_value_dollars=round(ev_dollars, 2),
     )
@@ -150,6 +179,7 @@ class BacktestResult:
     filled_trades: int
     winning_trades: int
     losing_trades: int
+    neutral_trades: int
     fill_rate_pct: float
     win_rate_pct: float
     profit_factor: float
@@ -165,9 +195,9 @@ class BacktestResult:
 
 def run_strategy_backtest(
     df: pd.DataFrame,
-    entry_retrace_sd: float = 0.5,       # 0.0 = DR Level, 0.5 = Mid-DR, etc.
+    entry_retrace_sd: float = 0.5,       # 0.0 = DR Level, 0.5 = Mid-DR, 0.75 = 75% Retracement, etc.
     stop_loss_sd: float = 1.0,           # 1.0 = Opposite DR
-    take_profit_sd: float = 0.8,         # 0.5, 0.8, 1.0, 1.2, 1.5
+    take_profit_sd: float = 0.8,         # 0.0 (DR Target), 0.5, 0.8, 1.0, 1.2, 1.5
     account_size: float = 25000.0,
     risk_pct_per_trade: float = 1.0,
     early_time_filter_only: bool = False,
@@ -175,12 +205,12 @@ def run_strategy_backtest(
     range_type: str = "All",
 ) -> BacktestResult:
     """
-    Backtests a systematic DR Retracement rule over historical event records.
+    Backtests a systematic DR Retracement rule over historical event records (DR Drive setup simulator).
     """
     if df.empty:
         empty_df = pd.DataFrame()
         return BacktestResult(
-            total_events=0, filled_trades=0, winning_trades=0, losing_trades=0,
+            total_events=0, filled_trades=0, winning_trades=0, losing_trades=0, neutral_trades=0,
             fill_rate_pct=0.0, win_rate_pct=0.0, profit_factor=0.0, total_pnl_dollars=0.0,
             total_r_return=0.0, max_drawdown_dollars=0.0, max_drawdown_pct=0.0, sharpe_ratio=0.0,
             trade_log=empty_df, equity_curve=empty_df, monthly_pnl_matrix=empty_df
@@ -204,7 +234,7 @@ def run_strategy_backtest(
     risk_dollars = account_size * (risk_pct_per_trade / 100.0)
     # Risk-to-reward ratio for this setup
     risk_distance_sd = max(0.1, stop_loss_sd - entry_retrace_sd)
-    reward_distance_sd = take_profit_sd + entry_retrace_sd
+    reward_distance_sd = max(0.1, take_profit_sd + entry_retrace_sd)
     trade_rr = reward_distance_sd / risk_distance_sd
 
     trades: List[Dict[str, Any]] = []
@@ -216,34 +246,38 @@ def run_strategy_backtest(
         ret_before_ext = row.get("retracement_before_extreme_sd", 0.0)
 
         # 1. Check if limit entry was filled
-        # For entry_retrace_sd == 0.0, any retraced_into_dr == True fills it.
-        # Otherwise, max_ret >= entry_retrace_sd is required.
+        # For entry_retrace_sd <= 0.0, filled if reached DR level or confirmed
         was_filled = (max_ret >= entry_retrace_sd) if entry_retrace_sd > 0 else True
 
         if not was_filled:
             continue
 
         # 2. Check outcome
-        # If DR Rule is True, price never broke the opposite DR (1.0x SD).
-        # If stop_loss_sd == 1.0, DR True ensures stop was never violated.
-        # If stop_loss_sd < 1.0 (e.g. 0.5 SD), check if max_ret >= stop_loss_sd.
         stopped_out = (max_ret >= stop_loss_sd) if stop_loss_sd < 1.0 else (not dr_true)
-
-        # Reached target?
         target_reached = max_ext >= take_profit_sd
 
-        # If DR True and reached target => Win
-        # If DR False, did it reach target before extreme / stop?
+        outcome = "neutral"
         if dr_true and target_reached:
-            is_win = True
+            outcome = "win"
         elif not stopped_out and target_reached:
-            is_win = True
-        elif not dr_true and target_reached and (ret_before_ext < stop_loss_sd):
-            is_win = True
+            outcome = "win"
+        elif not dr_true and target_reached and (ret_before_ext is not None and ret_before_ext < stop_loss_sd):
+            outcome = "win"
+        elif stopped_out:
+            outcome = "loss"
         else:
-            is_win = False
+            outcome = "neutral"
 
-        r_pnl = trade_rr if is_win else -1.0
+        is_win = (outcome == "win")
+        is_loss = (outcome == "loss")
+
+        if is_win:
+            r_pnl = trade_rr
+        elif is_loss:
+            r_pnl = -1.0
+        else:
+            r_pnl = 0.0
+
         dollar_pnl = risk_dollars * r_pnl
 
         t_date = row.get("trading_date")
@@ -255,8 +289,9 @@ def run_strategy_backtest(
             "range_type": row.get("range_type", "ADR"),
             "direction": row.get("direction", "LONG"),
             "dr_true": dr_true,
-            "max_ret_sd": round(max_ret, 2),
-            "max_ext_sd": round(max_ext, 2),
+            "max_ret_sd": round(max_ret, 2) if max_ret is not None else 0.0,
+            "max_ext_sd": round(max_ext, 2) if max_ext is not None else 0.0,
+            "outcome": outcome,
             "is_win": is_win,
             "r_pnl": round(r_pnl, 2),
             "dollar_pnl": round(dollar_pnl, 2),
@@ -267,7 +302,7 @@ def run_strategy_backtest(
     if trade_log.empty:
         empty_df = pd.DataFrame()
         return BacktestResult(
-            total_events=len(sample), filled_trades=0, winning_trades=0, losing_trades=0,
+            total_events=len(sample), filled_trades=0, winning_trades=0, losing_trades=0, neutral_trades=0,
             fill_rate_pct=0.0, win_rate_pct=0.0, profit_factor=0.0, total_pnl_dollars=0.0,
             total_r_return=0.0, max_drawdown_dollars=0.0, max_drawdown_pct=0.0, sharpe_ratio=0.0,
             trade_log=empty_df, equity_curve=empty_df, monthly_pnl_matrix=empty_df
@@ -284,11 +319,13 @@ def run_strategy_backtest(
     # Summary Metrics
     total_events = len(sample)
     filled_trades = len(trade_log)
-    winning_trades = int((trade_log["is_win"] == True).sum())
-    losing_trades = filled_trades - winning_trades
+    winning_trades = int((trade_log["outcome"] == "win").sum())
+    losing_trades = int((trade_log["outcome"] == "loss").sum())
+    neutral_trades = int((trade_log["outcome"] == "neutral").sum())
 
     fill_rate_pct = (filled_trades / total_events) * 100.0 if total_events > 0 else 0.0
-    win_rate_pct = (winning_trades / filled_trades) * 100.0 if filled_trades > 0 else 0.0
+    decisive_trades = winning_trades + losing_trades
+    win_rate_pct = (winning_trades / decisive_trades * 100.0) if decisive_trades > 0 else 0.0
 
     gross_profit = trade_log.loc[trade_log["dollar_pnl"] > 0, "dollar_pnl"].sum()
     gross_loss = abs(trade_log.loc[trade_log["dollar_pnl"] < 0, "dollar_pnl"].sum())
@@ -325,6 +362,7 @@ def run_strategy_backtest(
         filled_trades=filled_trades,
         winning_trades=winning_trades,
         losing_trades=losing_trades,
+        neutral_trades=neutral_trades,
         fill_rate_pct=round(fill_rate_pct, 1),
         win_rate_pct=round(win_rate_pct, 1),
         profit_factor=round(profit_factor, 2),
@@ -468,7 +506,7 @@ def build_inter_session_matrix(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================
-# 5. HOD / LOD TIMING DISTRIBUTION ENGINE
+# 5. HOS / LOS TIMING DISTRIBUTION ENGINE
 # ============================================================
 
 def make_30m_bucket(dt: Any) -> str:
@@ -489,9 +527,9 @@ def make_30m_bucket(dt: Any) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def build_hod_lod_heatmap_data(df: pd.DataFrame, range_type: str = "ADR") -> pd.DataFrame:
+def build_hos_los_heatmap_data(df: pd.DataFrame, range_type: str = "ADR") -> pd.DataFrame:
     """
-    Builds a 2D matrix of time intervals vs days of week for session extremes (HoD / LoD).
+    Builds a 2D matrix of time intervals vs days of week for session extremes (HoS / LoS).
     """
     if df.empty:
         return pd.DataFrame()
@@ -522,3 +560,7 @@ def build_hod_lod_heatmap_data(df: pd.DataFrame, range_type: str = "ADR") -> pd.
 
     day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     return heatmap.reindex([d for d in day_order if d in heatmap.index])
+
+
+# Backwards compatibility alias
+build_hod_lod_heatmap_data = build_hos_los_heatmap_data

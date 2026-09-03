@@ -251,14 +251,14 @@ def process_dataset(m1_file: Path) -> pd.DataFrame:
                         lowest_ts = post_conf_m1["low"].idxmin()
                         max_retracement_price = lowest_p
                         max_retracement_time = lowest_ts
-                        max_retracement_sd = max(0.0, (dr_high - lowest_p) / dr_range)
+                        max_retracement_sd = (dr_high - lowest_p) / dr_range
 
                         pre_extreme_m1 = post_conf_m1.loc[post_conf_m1.index <= extension_time]
                         if not pre_extreme_m1.empty:
                             pre_lowest = float(pre_extreme_m1["low"].min())
-                            retracement_before_extreme_sd = max(0.0, (dr_high - pre_lowest) / dr_range)
+                            retracement_before_extreme_sd = (dr_high - pre_lowest) / dr_range
                         else:
-                            retracement_before_extreme_sd = 0.0
+                            retracement_before_extreme_sd = None
 
                         candles_05 = post_conf_m1[post_conf_m1["high"] >= dr_high + 0.5 * dr_range]
                         if not candles_05.empty:
@@ -267,11 +267,12 @@ def process_dataset(m1_file: Path) -> pd.DataFrame:
                             post_05_m1 = post_conf_m1.loc[post_conf_m1.index >= time_05_sd]
                             if not post_05_m1.empty:
                                 post_05_lowest = float(post_05_m1["low"].min())
-                                retracement_after_05_sd = max(0.0, (dr_high - post_05_lowest) / dr_range)
+                                retracement_after_05_sd = (dr_high - post_05_lowest) / dr_range
 
                         if retraced_into_dr and not lines_m5.empty:
-                            final_close = float(lines_m5.iloc[-1]["close"])
-                            outside_dr_closed = bool(final_close > dr_high)
+                            # Highest close in the last 15 minutes (last 3 candles) of the session
+                            final_candles = lines_m5.iloc[-3:] if len(lines_m5) >= 3 else lines_m5
+                            outside_dr_closed = bool((final_candles["close"] > dr_high).any())
 
                     elif direction == "SHORT":
                         extreme_val = float(post_conf_m1["low"].min())
@@ -295,14 +296,14 @@ def process_dataset(m1_file: Path) -> pd.DataFrame:
                         highest_ts = post_conf_m1["high"].idxmax()
                         max_retracement_price = highest_p
                         max_retracement_time = highest_ts
-                        max_retracement_sd = max(0.0, (highest_p - dr_low) / dr_range)
+                        max_retracement_sd = (highest_p - dr_low) / dr_range
 
                         pre_extreme_m1 = post_conf_m1.loc[post_conf_m1.index <= extension_time]
                         if not pre_extreme_m1.empty:
                             pre_highest = float(pre_extreme_m1["high"].max())
-                            retracement_before_extreme_sd = max(0.0, (pre_highest - dr_low) / dr_range)
+                            retracement_before_extreme_sd = (pre_highest - dr_low) / dr_range
                         else:
-                            retracement_before_extreme_sd = 0.0
+                            retracement_before_extreme_sd = None
 
                         candles_05 = post_conf_m1[post_conf_m1["low"] <= dr_low - 0.5 * dr_range]
                         if not candles_05.empty:
@@ -311,11 +312,12 @@ def process_dataset(m1_file: Path) -> pd.DataFrame:
                             post_05_m1 = post_conf_m1.loc[post_conf_m1.index >= time_05_sd]
                             if not post_05_m1.empty:
                                 post_05_highest = float(post_05_m1["high"].max())
-                                retracement_after_05_sd = max(0.0, (post_05_highest - dr_low) / dr_range)
+                                retracement_after_05_sd = (post_05_highest - dr_low) / dr_range
 
                         if retraced_into_dr and not lines_m5.empty:
-                            final_close = float(lines_m5.iloc[-1]["close"])
-                            outside_dr_closed = bool(final_close < dr_low)
+                            # Lowest close in the last 15 minutes (last 3 candles) of the session
+                            final_candles = lines_m5.iloc[-3:] if len(lines_m5) >= 3 else lines_m5
+                            outside_dr_closed = bool((final_candles["close"] < dr_low).any())
 
             event_record = {
                 "instrument": instrument,

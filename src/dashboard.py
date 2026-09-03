@@ -1,7 +1,8 @@
+import datetime
 import math
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List, Optional
 
 # Ensure src directory is in sys.path for cloud deployment compatibility
 _SRC_DIR = Path(__file__).resolve().parent
@@ -20,7 +21,7 @@ from analytics_engine import (
     run_strategy_backtest,
     calc_cumulative_edge_curve,
     build_inter_session_matrix,
-    build_hod_lod_heatmap_data,
+    build_hos_los_heatmap_data,
 )
 
 # ============================================================
@@ -30,20 +31,24 @@ from analytics_engine import (
 ROOT = Path(__file__).resolve().parents[1]
 DATABASE_DIR = ROOT / "database"
 DISTRIBUTIONS_DIR = DATABASE_DIR / "distributions"
-EVENTS_FILE = DATABASE_DIR / "events_2024.csv"
+EVENTS_FILE = DATABASE_DIR / "events_master.csv"
+if not EVENTS_FILE.exists():
+    EVENTS_FILE = DATABASE_DIR / "events_2024.csv"
 
 # Color Palette & Tokens
 TEAL_PRIMARY = "#00E5A3"
 TEAL_DARK = "#009E73"
 TEAL_LIGHT = "#5CFFD0"
-BG_DARK = "#0E1012"
-BG_SIDEBAR = "#090A0C"
-BG_CARD = "#14171A"
-BORDER_COLOR = "#22272B"
+BG_DARK = "#0A0D10"
+BG_SIDEBAR = "#06080A"
+BG_CARD = "#121519"
+BORDER_COLOR = "#1F242A"
+BORDER_HOVER = "#323B45"
 TEXT_PRIMARY = "#F2F5F8"
 TEXT_MUTED = "#8E97A0"
-ACCENT_RED = "#FF4D4D"
+ACCENT_RED = "#FF4560"
 ACCENT_BLUE = "#38BDF8"
+ACCENT_GOLD = "#F59E0B"
 
 st.set_page_config(
     page_title="DR Lens | Quantitative Trading Platform",
@@ -75,23 +80,22 @@ html, body, [class*="css"] {{
 }}
 
 .block-container {{
-    padding-top: 1.0rem;
+    padding-top: 0.8rem;
     padding-bottom: 2rem;
-    max-width: 1560px;
+    max-width: 1580px;
 }}
 
-/* Top Brand */
+/* Brand Header */
 .brand-header {{
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 4px;
 }}
 
 .brand-badge {{
     background: linear-gradient(135deg, {TEAL_PRIMARY}, {TEAL_DARK});
     color: #000000;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 800;
     padding: 4px 10px;
     border-radius: 6px;
@@ -99,28 +103,46 @@ html, body, [class*="css"] {{
 }}
 
 .brand-title {{
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 800;
     letter-spacing: -0.5px;
     color: {TEXT_PRIMARY};
 }}
 
-/* Section Titles */
+/* Live Status Notification Banner */
+.status-banner {{
+    background: linear-gradient(90deg, rgba(0, 229, 163, 0.08) 0%, rgba(18, 21, 25, 0.8) 100%);
+    border: 1px solid rgba(0, 229, 163, 0.25);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+}}
+
+.status-banner.weekend {{
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.08) 0%, rgba(18, 21, 25, 0.8) 100%);
+    border-color: rgba(245, 158, 11, 0.3);
+}}
+
+/* Section Headings */
 .section-question {{
-    font-size: 15px;
+    font-size: 14.5px;
     font-weight: 600;
     color: {TEXT_PRIMARY};
-    margin-top: 8px;
-    margin-bottom: 8px;
+    margin-top: 6px;
+    margin-bottom: 6px;
 }}
 
 /* Metric Cards */
 .metric-box {{
-    background: linear-gradient(180deg, #181B1E 0%, #121417 100%);
+    background: linear-gradient(180deg, #15181D 0%, #101317 100%);
     border: 1px solid {BORDER_COLOR};
     border-radius: 8px;
     padding: 12px 14px;
-    min-height: 86px;
+    min-height: 84px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -128,7 +150,7 @@ html, body, [class*="css"] {{
 }}
 
 .metric-box:hover {{
-    border-color: #353B41;
+    border-color: {BORDER_HOVER};
     transform: translateY(-1px);
 }}
 
@@ -141,25 +163,53 @@ html, body, [class*="css"] {{
 }}
 
 .metric-val {{
-    font-size: 22px;
+    font-size: 21px;
     font-weight: 700;
     color: {TEXT_PRIMARY};
     font-family: 'Inter', sans-serif;
-    margin-top: 4px;
+    margin-top: 3px;
 }}
 
-/* Divider */
-hr {{
-    border: 0;
-    border-top: 1px solid {BORDER_COLOR};
-    margin: 16px 0;
+/* Playbook Info Box */
+.hud-box {{
+    background: #111418;
+    border: 1px solid {BORDER_COLOR};
+    border-left: 3px solid {TEAL_PRIMARY};
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 10px 0;
 }}
 
-/* Streamlit Widget Overrides */
+.hud-title {{
+    font-size: 13px;
+    font-weight: 700;
+    color: {TEAL_PRIMARY};
+    margin-bottom: 4px;
+}}
+
+.hud-desc {{
+    font-size: 12px;
+    color: {TEXT_MUTED};
+    line-height: 1.4;
+}}
+
+/* Streamlit Input Overrides */
 div[data-baseweb="select"] > div {{
-    background-color: #171A1D !important;
+    background-color: #14171C !important;
     border-color: {BORDER_COLOR} !important;
     border-radius: 6px !important;
+    color: {TEXT_PRIMARY} !important;
+}}
+
+div[data-baseweb="input"] > div {{
+    background-color: #14171C !important;
+    border-color: {BORDER_COLOR} !important;
+    color: {TEXT_PRIMARY} !important;
+}}
+
+input {{
+    color: {TEXT_PRIMARY} !important;
+    -webkit-text-fill-color: {TEXT_PRIMARY} !important;
 }}
 
 div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {{
@@ -170,19 +220,19 @@ div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {{
 }}
 
 .stButton > button {{
-    background-color: #1A1E22;
+    background-color: #161A1F;
     color: {TEXT_MUTED};
     border: 1px solid {BORDER_COLOR};
     border-radius: 6px;
     font-size: 11.5px;
     font-weight: 600;
-    padding: 4px 10px;
+    padding: 5px 10px;
     width: 100%;
     transition: all 0.15s ease;
 }}
 
 .stButton > button:hover {{
-    background-color: #24292F;
+    background-color: #20262E;
     color: {TEAL_PRIMARY};
     border-color: {TEAL_PRIMARY};
 }}
@@ -191,6 +241,12 @@ div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {{
     background-color: {TEAL_PRIMARY} !important;
     color: #000000 !important;
     border-color: {TEAL_PRIMARY} !important;
+}}
+
+hr {{
+    border: 0;
+    border-top: 1px solid {BORDER_COLOR};
+    margin: 14px 0;
 }}
 </style>
 """
@@ -211,25 +267,6 @@ def to_bool(val: Any) -> bool | None:
         return bool(val)
     s = str(val).strip().lower()
     return s in ["true", "1", "yes", "t"]
-
-
-def make_15m_bucket(minute_val: int) -> str:
-    start_min = int(minute_val)
-    end_min = start_min + 15
-    s_h, s_m = (start_min // 60) % 24, start_min % 60
-    e_h, e_m = (end_min // 60) % 24, end_min % 60
-    return f"{s_h:02d}:{s_m:02d}–{e_h:02d}:{e_m:02d}"
-
-
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    if "trading_date" in out.columns:
-        out["trading_date"] = pd.to_datetime(out["trading_date"], errors="coerce")
-        out["day_of_week"] = out["trading_date"].dt.day_name()
-    if "confirmation_time" in out.columns:
-        out["confirmation_time"] = pd.to_datetime(out["confirmation_time"], errors="coerce")
-        out["conf_30m_bucket"] = out["confirmation_time"].apply(make_30m_bucket)
-    return out
 
 
 def make_30m_bucket(dt: Any) -> str:
@@ -334,6 +371,13 @@ def load_dataset(mtime: float = 0.0) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    # Vectorized unclipped retracement calculation (preserves negative retracement values when price never re-enters IDR/DR)
+    if "max_retracement_price" in df.columns and "dr_high" in df.columns and "dr_range" in df.columns:
+        long_mask = (df["confirmed"] == True) & (df["direction"] == "LONG") & (df["dr_range"] > 0)
+        short_mask = (df["confirmed"] == True) & (df["direction"] == "SHORT") & (df["dr_range"] > 0)
+        df.loc[long_mask, "max_retracement_sd"] = (df.loc[long_mask, "dr_high"] - df.loc[long_mask, "max_retracement_price"]) / df.loc[long_mask, "dr_range"]
+        df.loc[short_mask, "max_retracement_sd"] = (df.loc[short_mask, "max_retracement_price"] - df.loc[short_mask, "dr_low"]) / df.loc[short_mask, "dr_range"]
+
     for col in ["confirmed", "dr_rule_true", "retraced_into_dr", "outside_dr_closed", "reached_05_sd"]:
         if col in df.columns:
             df[col] = df[col].apply(to_bool)
@@ -350,6 +394,8 @@ def filter_data(
     direction: str = "All",
     conf_time_buckets: list[str] | None = None,
     dr_rule_filter: str = "All",
+    after_date: Optional[datetime.date] = None,
+    last_x_days: Optional[int] = None,
 ) -> pd.DataFrame:
     out = df.copy()
 
@@ -362,6 +408,15 @@ def filter_data(
             out = out[out["trading_date"].dt.year == target_yr]
         except ValueError:
             pass
+
+    if after_date is not None and "trading_date" in out.columns:
+        out = out[out["trading_date"].dt.date >= after_date]
+
+    if last_x_days is not None and last_x_days > 0 and "trading_date" in out.columns:
+        unique_dates = sorted(out["trading_date"].dropna().dt.date.unique())
+        if len(unique_dates) > last_x_days:
+            cutoff = unique_dates[-last_x_days]
+            out = out[out["trading_date"].dt.date >= cutoff]
 
     if day_filter != "Unfiltered":
         if day_filter in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]:
@@ -459,9 +514,9 @@ def calc_core_metrics(df: pd.DataFrame) -> dict[str, str]:
 
     if "retracement_before_extreme_sd" in df.columns:
         ret_b_s = df["retracement_before_extreme_sd"].dropna()
-        res["Median Retracement before HoD/LoD"] = sd_mult(ret_b_s.median()) if not ret_b_s.empty else "—"
+        res["Median Retracement before HoS/LoS"] = sd_mult(ret_b_s.median()) if not ret_b_s.empty else "—"
     else:
-        res["Median Retracement before HoD/LoD"] = "—"
+        res["Median Retracement before HoS/LoS"] = "—"
 
     if "retracement_after_05_sd" in df.columns:
         ret_05_s = df["retracement_after_05_sd"].dropna()
@@ -488,6 +543,11 @@ def main():
         st.error("⚠️ No historical event data found. Please run the database builder.")
         return
 
+    now_dt = datetime.datetime.now()
+    today_weekday_name = now_dt.strftime("%A")
+    today_formatted = now_dt.strftime("%B %d, %Y")
+    is_weekend = now_dt.weekday() >= 5  # 5 = Sat, 6 = Sun
+
     # Session State
     if "active_distribution" not in st.session_state:
         st.session_state["active_distribution"] = "extension_sd"
@@ -495,13 +555,13 @@ def main():
         st.session_state["active_view"] = "Dashboard"
 
     # Top Brand Header & View Switcher
-    top_col1, top_col2 = st.columns([2.5, 3.5])
+    top_col1, top_col2 = st.columns([2.5, 4.0])
     with top_col1:
         st.markdown(
             """
             <div class="brand-header">
-                <div class="brand-badge">77</div>
-                <div class="brand-title">DR LENS</div>
+                <div class="brand-badge">⚡ DR</div>
+                <div class="brand-title">DR LENS & DRIVE</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -529,16 +589,27 @@ def main():
     # SIDEBAR
     # ========================================================
     with st.sidebar:
-        st.markdown("### Global Settings")
+        st.markdown("### 🎛️ Global Controls")
 
-        instrument_options = ["Gold (GC / XAU)", "Nasdaq (NQ)", "Emini S&P", "All Instruments"]
+        instrument_options = [
+            "Emini S&P (ES)",
+            "Nasdaq (NQ)",
+            "Gold (GC / XAU)",
+            "Emini Dow (YM)",
+            "Euro FX (EURUSD / 6E)",
+            "All Instruments",
+        ]
         instrument_choice = st.selectbox("Select Instrument", instrument_options, index=0)
         if "Gold" in instrument_choice or "GC" in instrument_choice:
             instrument = "GC"
-        elif instrument_choice == "Emini S&P":
+        elif "Emini S&P" in instrument_choice or "ES" in instrument_choice:
             instrument = "ES"
-        elif instrument_choice == "Nasdaq (NQ)":
+        elif "Nasdaq" in instrument_choice or "NQ" in instrument_choice:
             instrument = "NQ"
+        elif "Dow" in instrument_choice or "YM" in instrument_choice:
+            instrument = "YM"
+        elif "Euro" in instrument_choice or "EURUSD" in instrument_choice or "6E" in instrument_choice:
+            instrument = "6E"
         else:
             instrument = "All"
 
@@ -549,45 +620,78 @@ def main():
         selected_year = st.selectbox("Select Year", year_options, index=0)
         year_filter = "All" if "All" in selected_year else selected_year
 
-        range_type = st.radio("Select DR Range", ["ADR", "ODR", "RDR"], index=0)
+        range_type = st.radio("Select DR Range", ["ADR", "ODR", "RDR"], index=0, horizontal=True)
 
-        st.markdown("#### Session Filtering")
-        filter_options = [
-            "Entire Dataset", "Week 1", "Week 2", "Week 3", "Week 4",
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December",
-        ]
-        selected_filter = st.selectbox("Select data", filter_options, index=0)
-        sidebar_day_filter = "Unfiltered" if selected_filter == "Entire Dataset" else selected_filter
+        st.markdown("#### 📅 Session Filtering")
+        filter_mode_sidebar = st.selectbox(
+            "Filter Scope",
+            ["Entire Dataset (20 Years)", "After Chosen Date", "Last X Trading Days"],
+            index=0,
+        )
+
+        after_date_val = None
+        last_x_val = None
+
+        if filter_mode_sidebar == "After Chosen Date":
+            min_date = raw_df["trading_date"].min().date() if not raw_df.empty else datetime.date(2010, 1, 1)
+            max_date = raw_df["trading_date"].max().date() if not raw_df.empty else datetime.date(2026, 12, 31)
+            default_start = datetime.date(2023, 1, 1)
+            after_date_val = st.date_input("Include data after", value=default_start, min_value=min_date, max_value=max_date)
+        elif filter_mode_sidebar == "Last X Trading Days":
+            last_x_val = st.slider("Number of recent sessions", min_value=50, max_value=2000, value=250, step=50)
 
         st.divider()
         st.caption(f"Historical Sample: **{len(raw_df):,}** sessions")
-        st.caption(f"Range: **{range_type}** | Instrument: **{instrument}**")
+        st.caption(f"Active Range: **{range_type}** | Contract: **{instrument}**")
 
     # Global Base Population
     base_population = filter_data(
         raw_df,
         instrument=instrument,
         year_filter=year_filter,
-        day_filter=sidebar_day_filter,
+        day_filter="Unfiltered",
         range_type=range_type,
         direction="All",
         dr_rule_filter="All",
+        after_date=after_date_val,
+        last_x_days=last_x_val,
     )
     confirmed_population = base_population[base_population["confirmed"] == True].copy()
 
     # ========================================================
-    # VIEW 1: DASHBOARD (Exact Replica of drlens.themas7er.com)
+    # VIEW 1: DASHBOARD (Master & Mage DR Lens Architecture)
     # ========================================================
     if active_view == "Dashboard":
+
+        # Live Status & Weekend Notice Banner
+        if is_weekend:
+            st.markdown(
+                f"""
+                <div class="status-banner weekend">
+                    <div><b>⚡ Weekend Notice:</b> Markets closed today ({today_weekday_name}, {today_formatted}). Showing default Monday historical edge baseline.</div>
+                    <div style="font-weight:700; color:{ACCENT_GOLD};">GET READY FOR MONDAY</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f"""
+                <div class="status-banner">
+                    <div><b>🟢 Active Trading Session:</b> Today is <b>{today_weekday_name}, {today_formatted}</b>. 20-year statistical baseline loaded for <b>{range_type}</b>.</div>
+                    <div style="font-weight:700; color:{TEAL_PRIMARY};">QUANT EDGE READY</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         filter_col1, filter_col2 = st.columns(2)
         with filter_col1:
             st.markdown('<div class="section-question">How do you want to filter your data?</div>', unsafe_allow_html=True)
             filter_mode = st.selectbox(
                 "How do you want to filter your data?",
-                ["By day", "By week", "By month", "Entire Dataset"],
-                index=0,
+                ["By day", "By week", "By month", "Entire Dataset (20 Years)"],
+                index=0 if not is_weekend else 0,
                 label_visibility="collapsed",
             )
 
@@ -597,17 +701,17 @@ def main():
                 selected_day_abbr = st.selectbox(
                     "Select day",
                     ["Mon", "Tue", "Wed", "Thu", "Fri"],
-                    index=0,
+                    index=0 if is_weekend else (["Mon", "Tue", "Wed", "Thu", "Fri"].index(today_weekday_name[:3]) if today_weekday_name[:3] in ["Mon", "Tue", "Wed", "Thu", "Fri"] else 0),
                     label_visibility="collapsed",
                 )
                 day_name_map = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday", "Fri": "Friday"}
                 active_day_filter = day_name_map[selected_day_abbr]
             elif filter_mode == "By week":
-                st.markdown('<div class="section-question">Select week</div>', unsafe_allow_html=True)
+                st.markdown('<div class="section-question">Select week of month</div>', unsafe_allow_html=True)
                 active_day_filter = st.selectbox(
                     "Select week",
                     ["Week 1", "Week 2", "Week 3", "Week 4"],
-                    index=0,
+                    index=1,  # Default to Week 2 as in Master stream
                     label_visibility="collapsed",
                 )
             elif filter_mode == "By month":
@@ -620,7 +724,7 @@ def main():
                 )
             else:
                 st.markdown('<div class="section-question">&nbsp;</div>', unsafe_allow_html=True)
-                active_day_filter = sidebar_day_filter
+                active_day_filter = "Unfiltered"
 
         active_base = filter_data(
             raw_df,
@@ -630,6 +734,8 @@ def main():
             range_type=range_type,
             direction="All",
             dr_rule_filter="All",
+            after_date=after_date_val,
+            last_x_days=last_x_val,
         )
         active_confirmed = active_base[active_base["confirmed"] == True].copy()
 
@@ -658,15 +764,20 @@ def main():
             direction_selection = st.radio("Confirmation Direction", ["Long", "Short", "All"], index=0, horizontal=True, label_visibility="collapsed")
 
         with narrow_col3:
-            st.markdown("**Confirmation Time of the day**")
+            st.markdown("**Confirmation Time of the day (30m Windows)**")
             available_buckets = sorted(
                 active_confirmed["conf_30m_bucket"].dropna().unique().tolist(),
                 key=lambda x: int(x[:2]) * 60 + int(x[3:5]) if "-" in x else 0,
             )
             if not available_buckets:
-                available_buckets = ["20:30-21:00", "21:00-21:30", "21:30-22:00", "22:00-22:30", "22:30-23:00", "23:00-23:30"]
+                if range_type == "ADR":
+                    available_buckets = ["20:30-21:00", "21:00-21:30", "21:30-22:00", "22:00-22:30", "22:30-23:00", "23:00-23:30"]
+                elif range_type == "ODR":
+                    available_buckets = ["04:00-04:30", "04:30-05:00", "05:00-05:30", "05:30-06:00", "06:00-06:30"]
+                else:
+                    available_buckets = ["10:30-11:00", "11:00-11:30", "11:30-12:00", "12:00-12:30", "12:30-13:00"]
 
-            default_bucket = ["20:30-21:00"] if ("20:30-21:00" in available_buckets and range_type == "ADR") else []
+            default_bucket = [available_buckets[0]] if available_buckets else []
             selected_time_buckets = st.multiselect("Confirmation Time of the day", available_buckets, default=default_bucket, label_visibility="collapsed")
 
         direction_filter = direction_selection.upper() if direction_selection in ["Long", "Short"] else "All"
@@ -696,8 +807,8 @@ def main():
                 st.session_state["active_distribution"] = "max_retracement_sd"
 
         with m_col3:
-            render_metric_card("Median Retracement before HoD/LoD", core_metrics.get("Median Retracement before HoD/LoD", "—"))
-            if st.button("See before HoD/LoD distribution", key="btn_hod"):
+            render_metric_card("Median Retracement before HoS/LoS", core_metrics.get("Median Retracement before HoS/LoS", "—"))
+            if st.button("See before HoS/LoS distribution", key="btn_hos"):
                 st.session_state["active_distribution"] = "retracement_before_extreme_sd"
 
         with m_col4:
@@ -712,71 +823,110 @@ def main():
         active_dist_field = st.session_state.get("active_distribution", "extension_sd")
         titles = {
             "extension_sd": "SD Max Extension - Distribution",
-            "max_retracement_sd": "Maximum Retracement - Distribution",
-            "retracement_before_extreme_sd": "Retracement Before HoD/LoD - Distribution",
+            "max_retracement_sd": "Maximum Retracement - Distribution (Including Negative Values)",
+            "retracement_before_extreme_sd": "Retracement Before HoS/LoS - Distribution",
             "retracement_after_05_sd": "Retracement After 0.5 SD Reached - Distribution",
         }
         dist_title = titles.get(active_dist_field, "Distribution")
 
+        # Distribution Chart with Modal Cluster Highlighting & Negative Support
         if not filtered_events.empty and active_dist_field in filtered_events.columns:
             plot_series = filtered_events[active_dist_field].dropna()
             if not plot_series.empty:
                 if active_dist_field == "extension_sd":
-                    edge_points = [round(i * 0.20, 2) for i in range(30)]
+                    edge_points = [round(i * 0.20, 2) for i in range(25)]
                     bins = [-np.inf] + edge_points[1:] + [np.inf]
-                    labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["5.80+"]
-                elif active_dist_field == "max_retracement_sd":
-                    edge_points = [round(i * 0.20, 2) for i in range(16)]
-                    bins = [-np.inf] + edge_points[1:] + [np.inf]
-                    labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["3.00+"]
+                    labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["4.80+"]
                 else:
-                    edge_points = [round(i * 0.20, 2) for i in range(11)]
+                    # Retracements: span negative bins (-0.8 to +2.6)
+                    edge_points = [round(i * 0.20 - 0.80, 2) for i in range(18)]
                     bins = [-np.inf] + edge_points[1:] + [np.inf]
-                    labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["2.00+"]
+                    labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["2.60+"]
 
                 binned = pd.cut(plot_series, bins=bins, labels=labels, right=False)
                 counts_df = binned.value_counts(sort=False).reset_index()
                 counts_df.columns = ["bin", "count"]
                 counts_df["percentage"] = (counts_df["count"] / len(plot_series) * 100).round(1)
 
+                # Find modal cluster (top 20% frequency bins) to highlight in vibrant teal
+                top_count = counts_df["count"].max()
+                threshold = top_count * 0.70
+                colors = [TEAL_PRIMARY if c >= threshold and c > 0 else "#222930" for c in counts_df["count"]]
+
                 fig = go.Figure()
                 fig.add_trace(
                     go.Bar(
                         x=counts_df["bin"],
                         y=counts_df["count"],
-                        marker=dict(color=TEAL_PRIMARY, line=dict(color=TEAL_PRIMARY, width=0.5)),
-                        hovertemplate="<b>SD Level: %{x}</b><br>Count: %{y}<br>Share: %{customdata}%<extra></extra>",
+                        marker=dict(color=colors, line=dict(color=TEAL_PRIMARY, width=0.5)),
+                        hovertemplate="<b>Level: %{x} SD</b><br>Frequency: %{y:,} days<br>Share: %{customdata}%<extra></extra>",
                         customdata=counts_df["percentage"],
                     )
                 )
                 fig.update_layout(
-                    title=dict(text=f"<b>{dist_title}</b> (N = {len(plot_series):,})", font=dict(color=TEXT_PRIMARY, size=14), x=0.5, xanchor="center", y=0.98),
+                    title=dict(
+                        text=f"<b>{dist_title}</b> (N = {len(plot_series):,} sessions | Highlighted = Modal Cluster Target Zone)",
+                        font=dict(color=TEXT_PRIMARY, size=13.5),
+                        x=0.5,
+                        xanchor="center",
+                        y=0.98,
+                    ),
                     template="plotly_dark",
                     paper_bgcolor=BG_DARK,
                     plot_bgcolor=BG_DARK,
                     height=380,
                     margin=dict(l=20, r=20, t=40, b=40),
                     bargap=0.15,
-                    xaxis=dict(title=dict(text=dist_title, font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_MUTED, size=10), showgrid=False),
-                    yaxis=dict(title=dict(text="Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1F2327", showgrid=True),
+                    xaxis=dict(title=dict(text="Standard Deviation Units (SD = IDR Range)", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_MUTED, size=10), showgrid=False),
+                    yaxis=dict(title=dict(text="Session Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1B2026", showgrid=True),
                 )
                 st.plotly_chart(fig, use_container_width=True)
+
+                # DR Drive Playbook & Execution Insight Card
+                med_ext_val = core_metrics.get("Median SD Extension", "—")
+                med_ret_val = core_metrics.get("Median Max Retracement", "—")
+                med_time_val = core_metrics.get("Max Extension Median Time", "—")
+
+                st.markdown(
+                    f"""
+                    <div class="hud-box">
+                        <div class="hud-title">⚡ DR DRIVE PLAYBOOK & EXECUTION CONFLUENCE</div>
+                        <div class="hud-desc">
+                            • <b>Optimal Entry Trigger:</b> Target limit retracement between <b>0.60x and {med_ret_val}</b> into IDR after confirmation.<br/>
+                            • <b>Target Expectation:</b> Median extension is <b>{med_ext_val}</b>. Low-hanging fruit target = <b>0.50x SD</b>.<br/>
+                            • <b>Time Expiration Decay:</b> Peak session high/low occurs on average at <b>{med_time_val}</b>. If price has not reached {med_ext_val} by this time, scale back targets to 0.5x SD or IDR Mid.<br/>
+                            • <b>False Day Playbook:</b> If DR rule fails (closing beyond opposite DR), historical false days reverse to <b>2.0x – 2.5x SD</b> in the opposite direction.
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             else:
                 st.info("No numerical observations available for this metric under current filters.")
         else:
             st.info("No confirmed events matching current granular filters.")
 
     # ========================================================
-    # VIEW 2: LIVE TRADE CALCULATOR & RISK PLANNER
+    # VIEW 2: LIVE TRADE CALCULATOR & DR DRIVE HUD
     # ========================================================
     elif active_view == "Trade Calculator":
         st.markdown("### 🧮 Live Session Trade Calculator & Position Sizer")
-        st.caption("Input today's active Defining Range to instantly generate exact limit entry prices, profit target tiers, position sizing, and historical hit probabilities.")
+        st.caption("Input today's active Defining Range to instantly generate exact limit entry prices, profit target tiers, position sizing, and False Day Playbook projections.")
 
         calc_col1, calc_col2 = st.columns([1.8, 3.2])
 
         with calc_col1:
-            live_instrument = st.selectbox("Trading Contract", ["Gold (GC - Standard)", "Gold (MGC - Micro)", "NQ (E-mini)", "MNQ (Micro)", "ES (E-mini)", "MES (Micro)"], index=0)
+            live_instrument = st.selectbox(
+                "Trading Contract",
+                [
+                    "E-mini S&P (ES)", "Micro E-mini S&P (MES)",
+                    "Nasdaq 100 (NQ)", "Micro Nasdaq (MNQ)",
+                    "Gold Futures (GC)", "Micro Gold (MGC)",
+                    "E-mini Dow (YM)", "Micro Dow (MYM)",
+                    "Euro FX (6E / EURUSD)",
+                ],
+                index=0,
+            )
             if "MGC" in live_instrument:
                 live_sym = "MGC"
             elif "GC" in live_instrument or "Gold" in live_instrument:
@@ -787,6 +937,12 @@ def main():
                 live_sym = "NQ"
             elif "MES" in live_instrument:
                 live_sym = "MES"
+            elif "MYM" in live_instrument:
+                live_sym = "MYM"
+            elif "YM" in live_instrument or "Dow" in live_instrument:
+                live_sym = "YM"
+            elif "Euro" in live_instrument or "6E" in live_instrument:
+                live_sym = "6E"
             else:
                 live_sym = "ES"
 
@@ -794,28 +950,41 @@ def main():
             active_dir = "LONG" if "LONG" in direction_input else "SHORT"
 
             if "GC" in live_sym or "MGC" in live_sym:
-                default_high = 2750.0
-                default_low = 2735.0
+                default_high, default_low = 2750.0, 2735.0
             elif "NQ" in live_sym or "MNQ" in live_sym:
-                default_high = 20150.0
-                default_low = 20080.0
+                default_high, default_low = 20150.0, 20080.0
+            elif "YM" in live_sym or "MYM" in live_sym:
+                default_high, default_low = 41250.0, 41100.0
+            elif "6E" in live_sym:
+                default_high, default_low = 1.0850, 1.0820
             else:
-                default_high = 5520.0
-                default_low = 5500.0
+                default_high, default_low = 5520.0, 5500.0
 
             inp_col1, inp_col2 = st.columns(2)
             with inp_col1:
-                input_dr_high = st.number_input("DR High", value=default_high, step=1.0, format="%.2f")
+                input_dr_high = st.number_input("DR High", value=default_high, step=1.0 if "6E" not in live_sym else 0.0005, format="%.2f" if "6E" not in live_sym else "%.4f")
             with inp_col2:
-                input_dr_low = st.number_input("DR Low", value=default_low, step=1.0, format="%.2f")
+                input_dr_low = st.number_input("DR Low", value=default_low, step=1.0 if "6E" not in live_sym else 0.0005, format="%.2f" if "6E" not in live_sym else "%.4f")
 
             st.markdown("#### 2. Execution Strategy")
             entry_model = st.selectbox(
                 "Limit Entry Level",
-                ["Mid-DR (0.50x Retracement)", "DR Boundary (0.00x Retracement)", "25% Retracement (0.25x)", "75% Retracement (0.75x)"],
+                [
+                    "75% Retracement (0.75x Retracement)",
+                    "80% Retracement (0.80x Retracement)",
+                    "Mid-DR (0.50x Retracement)",
+                    "25% Retracement (0.25x Retracement)",
+                    "DR Boundary (0.00x Retracement)",
+                ],
                 index=0,
             )
-            entry_sd_map = {"Mid-DR (0.50x Retracement)": 0.5, "DR Boundary (0.00x Retracement)": 0.0, "25% Retracement (0.25x)": 0.25, "75% Retracement (0.75x)": 0.75}
+            entry_sd_map = {
+                "75% Retracement (0.75x Retracement)": 0.75,
+                "80% Retracement (0.80x Retracement)": 0.80,
+                "Mid-DR (0.50x Retracement)": 0.50,
+                "25% Retracement (0.25x Retracement)": 0.25,
+                "DR Boundary (0.00x Retracement)": 0.00,
+            }
             active_entry_sd = entry_sd_map[entry_model]
 
             st.markdown("#### 3. Account & Risk Management")
@@ -842,11 +1011,11 @@ def main():
 
             p_col1, p_col2, p_col3, p_col4 = st.columns(4)
             with p_col1:
-                render_metric_card("Entry Order", f"{plan.entry_price:.2f}")
+                render_metric_card("Entry Order", f"{plan.entry_price:.2f}" if "6E" not in live_sym else f"{plan.entry_price:.4f}")
             with p_col2:
-                render_metric_card("Invalidation Stop", f"{plan.stop_price:.2f}")
+                render_metric_card("Invalidation Stop", f"{plan.stop_price:.2f}" if "6E" not in live_sym else f"{plan.stop_price:.4f}")
             with p_col3:
-                render_metric_card("Stop Distance", f"{plan.stop_distance_pts:.2f} pts")
+                render_metric_card("Stop Distance", f"{plan.stop_distance_pts:.2f} pts" if "6E" not in live_sym else f"{plan.stop_distance_pts:.4f}")
             with p_col4:
                 render_metric_card("Position Size", f"{plan.contracts} Contract(s)")
 
@@ -856,7 +1025,7 @@ def main():
             for t in plan.targets:
                 tp_rows.append({
                     "Target Tier": t["sd_level"],
-                    "Exit Price": f"{t['tp_price']:.2f}",
+                    "Exit Price": f"{t['tp_price']:.2f}" if "6E" not in live_sym else f"{t['tp_price']:.4f}",
                     "Gain (Pts)": f"+{t['gain_pts']:.2f} pts",
                     "Dollar Gain ($)": f"+${t['gain_dollars']:,.2f}",
                     "Risk:Reward": f"1 : {t['rr_ratio']:.2f}",
@@ -864,8 +1033,10 @@ def main():
 
             st.dataframe(pd.DataFrame(tp_rows), use_container_width=True, hide_index=True)
 
+            st.markdown("#### 🔄 False Day Playbook (Opposite Breakout Scenario)")
+            st.dataframe(pd.DataFrame(plan.false_day_targets), use_container_width=True, hide_index=True)
+
             # Price Map Chart
-            st.markdown("#### 🗺️ Visual Price Level Structure")
             fig_map = go.Figure()
 
             # Target lines
@@ -873,16 +1044,16 @@ def main():
                 fig_map.add_trace(go.Scatter(
                     x=[0, 1], y=[t["tp_price"], t["tp_price"]],
                     mode="lines+text", name=t["sd_level"],
-                    text=["", f"TP {t['sd_level']} ({t['tp_price']:.2f}) - 1:{t['rr_ratio']:.1f} R:R"],
+                    text=["", f"TP {t['sd_level']} ({t['tp_price']}) - 1:{t['rr_ratio']:.1f} R:R"],
                     textposition="middle right",
-                    line=dict(color=TEAL_LIGHT if t["sd_val"] <= 1.0 else "#00C896", width=1, dash="dot"),
+                    line=dict(color=TEAL_LIGHT if t["sd_val"] <= 0.5 else "#00C896", width=1, dash="dot"),
                 ))
 
             # Entry line
             fig_map.add_trace(go.Scatter(
                 x=[0, 1], y=[plan.entry_price, plan.entry_price],
                 mode="lines+text", name="Entry",
-                text=["", f"★ ENTRY ({plan.entry_price:.2f})"],
+                text=["", f"★ ENTRY ({plan.entry_price})"],
                 textposition="middle right",
                 line=dict(color=TEAL_PRIMARY, width=3),
             ))
@@ -891,7 +1062,7 @@ def main():
             fig_map.add_trace(go.Scatter(
                 x=[0, 1], y=[plan.stop_price, plan.stop_price],
                 mode="lines+text", name="Stop Loss",
-                text=["", f"🛑 STOP / INVALIDATION ({plan.stop_price:.2f})"],
+                text=["", f"🛑 STOP / INVALIDATION ({plan.stop_price})"],
                 textposition="middle right",
                 line=dict(color=ACCENT_RED, width=2, dash="dash"),
             ))
@@ -900,41 +1071,41 @@ def main():
                 template="plotly_dark",
                 paper_bgcolor=BG_DARK,
                 plot_bgcolor=BG_DARK,
-                height=300,
+                height=320,
                 showlegend=False,
-                margin=dict(l=10, r=180, t=10, b=10),
-                xaxis=dict(showticklabels=False, showgrid=False, range=[0, 1.3]),
-                yaxis=dict(gridcolor="#1F2327", showgrid=True),
+                margin=dict(l=10, r=220, t=10, b=10),
+                xaxis=dict(showticklabels=False, showgrid=False, range=[0, 1.4]),
+                yaxis=dict(gridcolor="#1B2026", showgrid=True),
             )
             st.plotly_chart(fig_map, use_container_width=True)
 
     # ========================================================
-    # VIEW 3: SYSTEMATIC STRATEGY BACKTESTER
+    # VIEW 3: SYSTEMATIC STRATEGY BACKTESTER (DR DRIVE ENGINE)
     # ========================================================
     elif active_view == "Strategy Backtester":
         min_year = int(raw_df["trading_date"].dropna().dt.year.min()) if not raw_df.empty else 2010
         max_year = int(raw_df["trading_date"].dropna().dt.year.max()) if not raw_df.empty else 2026
         span_years = max_year - min_year + 1
         st.markdown(f"### 🧪 {span_years}-Year Systematic Strategy Backtester & Simulator")
-        st.caption(f"Simulate rule-based execution across {len(raw_df):,} historical sessions ({min_year}–{max_year}). Test entry retracements, stop loss variations, and take-profit targets.")
+        st.caption(f"Simulate rule-based DR execution across {len(raw_df):,} historical sessions ({min_year}–{max_year}). Test DR Drive 75% retracement setups, stop loss variations, and take-profit tiers.")
 
         bt_settings_col1, bt_settings_col2, bt_settings_col3, bt_settings_col4 = st.columns(4)
 
         with bt_settings_col1:
             bt_entry_choice = st.selectbox(
                 "Entry Retracement Level",
-                ["Mid-DR (0.50x SD)", "DR Level (0.00x SD)", "25% Retracement (0.25x SD)", "75% Retracement (0.75x SD)"],
+                ["75% Retracement (0.75x SD)", "80% Retracement (0.80x SD)", "Mid-DR (0.50x SD)", "25% Retracement (0.25x SD)", "DR Level (0.00x SD)"],
                 index=0,
             )
-            bt_entry_sd = {"Mid-DR (0.50x SD)": 0.5, "DR Level (0.00x SD)": 0.0, "25% Retracement (0.25x SD)": 0.25, "75% Retracement (0.75x SD)": 0.75}[bt_entry_choice]
+            bt_entry_sd = {"75% Retracement (0.75x SD)": 0.75, "80% Retracement (0.80x SD)": 0.80, "Mid-DR (0.50x SD)": 0.50, "25% Retracement (0.25x SD)": 0.25, "DR Level (0.00x SD)": 0.00}[bt_entry_choice]
 
         with bt_settings_col2:
             bt_stop_choice = st.selectbox("Stop Loss Rule", ["Opposite DR (1.0x SD)", "Mid-DR (0.5x SD)"], index=0)
             bt_stop_sd = 1.0 if "1.0x" in bt_stop_choice else 0.5
 
         with bt_settings_col3:
-            bt_tp_choice = st.selectbox("Take Profit Target", ["0.5x SD", "0.8x SD", "1.0x SD", "1.2x SD", "1.5x SD", "2.0x SD"], index=1)
-            bt_tp_sd = float(bt_tp_choice.replace("x SD", ""))
+            bt_tp_choice = st.selectbox("Take Profit Target", ["0.0x SD (DR Boundary)", "0.5x SD (Low-Hanging Fruit)", "0.8x SD", "1.0x SD", "1.2x SD", "1.5x SD", "2.0x SD"], index=1)
+            bt_tp_sd = 0.0 if "0.0x" in bt_tp_choice else (0.5 if "0.5x" in bt_tp_choice else float(bt_tp_choice.split()[0].replace("x", "")))
 
         with bt_settings_col4:
             bt_early_filter = st.checkbox("Early Confirmation Only (<30m)", value=False)
@@ -955,7 +1126,7 @@ def main():
         st.markdown("#### Performance Scorecard")
         res_cols = st.columns(6)
         with res_cols[0]:
-            render_metric_card("Total Trades", f"{bt_res.filled_trades:,}")
+            render_metric_card("Total Filled Trades", f"{bt_res.filled_trades:,}")
         with res_cols[1]:
             render_metric_card("Win Rate", f"{bt_res.win_rate_pct:.1f}%")
         with res_cols[2]:
@@ -967,13 +1138,24 @@ def main():
         with res_cols[5]:
             render_metric_card("Sharpe Ratio", f"{bt_res.sharpe_ratio:.2f}")
 
+        # Trade Outcome Distribution Breakdown
+        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+        with b_col1:
+            st.metric("✅ Winning Trades", f"{bt_res.winning_trades:,}")
+        with b_col2:
+            st.metric("❌ Losing Trades", f"{bt_res.losing_trades:,}")
+        with b_col3:
+            st.metric("⚪ Neutral (Break-even)", f"{bt_res.neutral_trades:,}")
+        with b_col4:
+            st.metric("📈 Cumulative R Return", f"+{bt_res.total_r_return:.1f} R")
+
         st.markdown("#### 📈 15-Year Cumulative Equity Curve")
         if not bt_res.equity_curve.empty:
             fig_equity = px.line(
                 bt_res.equity_curve,
                 x="trading_date",
                 y="equity",
-                title="Portfolio Equity ($) Over 15 Years (Starting Balance: $25,000, Risk: 1% / trade)",
+                title=f"Portfolio Equity Curve Over 15 Years (Starting Balance: $25,000, Risk: 1% / trade)",
             )
             fig_equity.update_traces(line_color=TEAL_PRIMARY, line_width=1.5)
             fig_equity.update_layout(
@@ -981,8 +1163,8 @@ def main():
                 paper_bgcolor=BG_DARK,
                 plot_bgcolor=BG_DARK,
                 height=380,
-                xaxis=dict(title="Date", gridcolor="#1F2327"),
-                yaxis=dict(title="Account Balance ($)", gridcolor="#1F2327"),
+                xaxis=dict(title="Date", gridcolor="#1B2026"),
+                yaxis=dict(title="Account Balance ($)", gridcolor="#1B2026"),
             )
             st.plotly_chart(fig_equity, use_container_width=True)
 
@@ -999,8 +1181,8 @@ def main():
 
         opt_col1, opt_col2 = st.columns(2)
         with opt_col1:
-            edge_entry_choice = st.selectbox("Entry Retracement Model", ["Mid-DR (0.50x Retracement)", "DR Level (0.00x)", "25% Retracement (0.25x)"], index=0)
-            edge_entry_sd = 0.5 if "0.50x" in edge_entry_choice else (0.0 if "0.00x" in edge_entry_choice else 0.25)
+            edge_entry_choice = st.selectbox("Entry Retracement Model", ["75% Retracement (0.75x)", "Mid-DR (0.50x Retracement)", "DR Level (0.00x)", "25% Retracement (0.25x)"], index=1)
+            edge_entry_sd = 0.75 if "0.75x" in edge_entry_choice else (0.5 if "0.50x" in edge_entry_choice else (0.0 if "0.00x" in edge_entry_choice else 0.25))
 
         with opt_col2:
             edge_stop_choice = st.selectbox("Invalidation Stop Model", ["Opposite DR (1.00x SD)", "Mid-DR (0.50x SD)"], index=0)
@@ -1040,10 +1222,10 @@ def main():
                 paper_bgcolor=BG_DARK,
                 plot_bgcolor=BG_DARK,
                 height=400,
-                xaxis=dict(title="Target SD Level", gridcolor="#1F2327"),
-                yaxis=dict(title="Probability (%)", side="left", gridcolor="#1F2327", range=[0, 100]),
+                xaxis=dict(title="Target SD Level", gridcolor="#1B2026"),
+                yaxis=dict(title="Probability (%)", side="left", gridcolor="#1B2026", range=[0, 100]),
                 yaxis2=dict(title="Expected Value (R / trade)", side="right", overlaying="y", showgrid=False),
-                legend=dict(x=0.8, y=0.95),
+                legend=dict(x=0.75, y=0.95),
             )
             st.plotly_chart(fig_ev, use_container_width=True)
 
@@ -1074,13 +1256,13 @@ def main():
             st.info("Insufficient multi-session records to compute confluence matrix.")
 
     # ========================================================
-    # VIEW 6: TIMING & HOD/LOD HEATMAP
+    # VIEW 6: TIMING & HOS/LOS HEATMAP
     # ========================================================
     elif active_view == "Timing Heatmap":
-        st.markdown("### ⏰ Intraday High / Low of Day Timing Heatmap")
+        st.markdown("### ⏰ Intraday High / Low of Session (HoS / LoS) Timing Heatmap")
         st.caption(f"Identify peak volume and extreme price reversal windows across the trading week for {range_type} sessions.")
 
-        heat_df = build_hod_lod_heatmap_data(raw_df, range_type=range_type)
+        heat_df = build_hos_los_heatmap_data(raw_df, range_type=range_type)
         if not heat_df.empty:
             fig_heat = px.imshow(
                 heat_df,
@@ -1108,7 +1290,7 @@ def main():
             names_map = {
                 "extension_sd": "Maximum SD Extension",
                 "max_retracement_sd": "Maximum Retracement (SD)",
-                "retracement_before_extreme_sd": "Retracement Before HoD/LoD (SD)",
+                "retracement_before_extreme_sd": "Retracement Before HoS/LoS (SD)",
                 "retracement_after_05_sd": "Retracement After 0.5 SD (SD)",
             }
 
@@ -1155,3 +1337,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
