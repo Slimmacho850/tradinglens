@@ -520,8 +520,11 @@ def calc_core_metrics(df: pd.DataFrame) -> dict[str, str]:
 
     if "retracement_before_extreme_sd" in df.columns:
         ret_b_s = df["retracement_before_extreme_sd"].dropna()
-        res["Median Retracement before HoS/LoS"] = sd_mult(ret_b_s.median()) if not ret_b_s.empty else "—"
+        val = sd_mult(ret_b_s.median()) if not ret_b_s.empty else "—"
+        res["Median Retracement before HoD/LoD"] = val
+        res["Median Retracement before HoS/LoS"] = val
     else:
+        res["Median Retracement before HoD/LoD"] = "—"
         res["Median Retracement before HoS/LoS"] = "—"
 
     if "retracement_after_05_sd" in df.columns:
@@ -836,7 +839,7 @@ def main():
         st.markdown("<hr/>", unsafe_allow_html=True)
 
         core_metrics = calc_core_metrics(filtered_events)
-        m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
+        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
 
         with m_col1:
             render_metric_card("Median SD Extension", core_metrics.get("Median SD Extension", "—"))
@@ -849,22 +852,16 @@ def main():
                 st.session_state["active_distribution"] = "max_retracement_sd"
 
         with m_col3:
-            render_metric_card("Median Retracement before HoS/LoS", core_metrics.get("Median Retracement before HoS/LoS", "—"))
-            if st.button("See before HoS/LoS distribution", key="btn_hos"):
+            render_metric_card("Median Retracement before HoD/LoD", core_metrics.get("Median Retracement before HoD/LoD", "—"))
+            if st.button("See before HoD/LoD distribution", key="btn_hod"):
                 st.session_state["active_distribution"] = "retracement_before_extreme_sd"
 
         with m_col4:
-            render_metric_card("Median Retracement after 0.5 SD", core_metrics.get("Median Retracement after 0.5 SD reached", "—"))
+            render_metric_card("Median Retracement after 0.5 SD reached", core_metrics.get("Median Retracement after 0.5 SD reached", "—"))
             if st.button("See after 0.5 SD distribution", key="btn_05"):
                 st.session_state["active_distribution"] = "retracement_after_05_sd"
 
         with m_col5:
-            first_ret_str = core_metrics.get("First Retracement Median Time", "—")
-            render_metric_card("Retracement Median Time", first_ret_str)
-            if st.button("See Retracement Time distribution", key="btn_retrace_time"):
-                st.session_state["active_distribution"] = "max_retracement_time"
-
-        with m_col6:
             render_metric_card("Max Extension Median Time", core_metrics.get("Max Extension Median Time", "—"))
             if st.button("See Extension Time distribution", key="btn_ext_time"):
                 st.session_state["active_distribution"] = "extension_time"
@@ -873,7 +870,7 @@ def main():
         titles = {
             "extension_sd": "SD Max Extension - Distribution",
             "max_retracement_sd": "Maximum Retracement - Distribution (Including Negative Values)",
-            "retracement_before_extreme_sd": "Retracement Before HoS/LoS - Distribution",
+            "retracement_before_extreme_sd": "Retracement Before HoD/LoD - Distribution",
             "retracement_after_05_sd": "Retracement After 0.5 SD Reached - Distribution",
             "max_retracement_time": "Maximum Retracement Clock Time - 30-Minute Distribution",
             "extension_time": "Maximum Extension Peak Clock Time - 30-Minute Distribution",
@@ -913,7 +910,7 @@ def main():
                         margin=dict(l=20, r=20, t=40, b=40),
                         bargap=0.15,
                         xaxis=dict(title=dict(text="Time Window (America/New_York)", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_MUTED, size=10), showgrid=False),
-                        yaxis=dict(title=dict(text="Session Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1B2026", showgrid=True),
+                        yaxis=dict(title=dict(text="Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1B2026", showgrid=True),
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 else:
@@ -922,51 +919,64 @@ def main():
                 plot_series = filtered_events[active_dist_field].dropna()
                 if not plot_series.empty:
                     if active_dist_field == "extension_sd":
-                        edge_points = [round(i * 0.20, 2) for i in range(25)]
-                        bins = [-np.inf] + edge_points[1:] + [np.inf]
-                        labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["4.80+"]
+                        # 0.10 SD bin increments from 0.00 to 6.00 matching official TheMas7er DR Lens
+                        bins = [round(i * 0.10, 2) for i in range(61)]
+                        labels = [f"{pt:.2f}" for pt in bins[:-1]]
+                        binned = pd.cut(plot_series, bins=bins, labels=labels, right=False)
+                        counts_df = binned.value_counts(sort=False).reset_index()
+                        counts_df.columns = ["bin", "count"]
+                        counts_df["percentage"] = (counts_df["count"] / len(plot_series) * 100).round(1)
+                        tickvals = [f"{round(i * 0.20, 2):.2f}" for i in range(30)]  # 0.00, 0.20, 0.40... 5.80
+                    elif active_dist_field == "max_retracement_sd":
+                        # 0.10 SD bin increments from -0.80 to +3.00
+                        bins = [round(i * 0.10 - 0.80, 2) for i in range(39)]
+                        labels = [f"{pt:.2f}" for pt in bins[:-1]]
+                        binned = pd.cut(plot_series, bins=bins, labels=labels, right=False)
+                        counts_df = binned.value_counts(sort=False).reset_index()
+                        counts_df.columns = ["bin", "count"]
+                        counts_df["percentage"] = (counts_df["count"] / len(plot_series) * 100).round(1)
+                        tickvals = [f"{round(i * 0.20 - 0.80, 2):.2f}" for i in range(20)]
                     else:
-                        # Retracements: span negative bins (-0.8 to +2.6)
-                        edge_points = [round(i * 0.20 - 0.80, 2) for i in range(18)]
-                        bins = [-np.inf] + edge_points[1:] + [np.inf]
-                        labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["2.60+"]
-
-                    binned = pd.cut(plot_series, bins=bins, labels=labels, right=False)
-                    counts_df = binned.value_counts(sort=False).reset_index()
-                    counts_df.columns = ["bin", "count"]
-                    counts_df["percentage"] = (counts_df["count"] / len(plot_series) * 100).round(1)
-
-                    # Find modal cluster (top 20% frequency bins) to highlight in vibrant teal
-                    top_count = counts_df["count"].max()
-                    threshold = top_count * 0.70
-                    colors = [TEAL_PRIMARY if c >= threshold and c > 0 else "#222930" for c in counts_df["count"]]
+                        # 0.10 SD bin increments from 0.00 to 3.00
+                        bins = [round(i * 0.10, 2) for i in range(31)]
+                        labels = [f"{pt:.2f}" for pt in bins[:-1]]
+                        binned = pd.cut(plot_series, bins=bins, labels=labels, right=False)
+                        counts_df = binned.value_counts(sort=False).reset_index()
+                        counts_df.columns = ["bin", "count"]
+                        counts_df["percentage"] = (counts_df["count"] / len(plot_series) * 100).round(1)
+                        tickvals = [f"{round(i * 0.20, 2):.2f}" for i in range(16)]
 
                     fig = go.Figure()
                     fig.add_trace(
                         go.Bar(
                             x=counts_df["bin"],
                             y=counts_df["count"],
-                            marker=dict(color=colors, line=dict(color=TEAL_PRIMARY, width=0.5)),
-                            hovertemplate="<b>Level: %{x} SD</b><br>Frequency: %{y:,} days<br>Share: %{customdata}%<extra></extra>",
+                            marker=dict(color=TEAL_PRIMARY, line=dict(color=TEAL_PRIMARY, width=0.5)),
+                            hovertemplate="<b>Level: %{x} SD</b><br>Count: %{y:,}<br>Share: %{customdata}%<extra></extra>",
                             customdata=counts_df["percentage"],
                         )
                     )
                     fig.update_layout(
-                        title=dict(
-                            text=f"<b>{dist_title}</b> (N = {len(plot_series):,} sessions | Highlighted = Modal Cluster Target Zone)",
-                            font=dict(color=TEXT_PRIMARY, size=13.5),
-                            x=0.5,
-                            xanchor="center",
-                            y=0.98,
-                        ),
                         template="plotly_dark",
                         paper_bgcolor=BG_DARK,
                         plot_bgcolor=BG_DARK,
-                        height=380,
-                        margin=dict(l=20, r=20, t=40, b=40),
+                        height=400,
+                        margin=dict(l=30, r=30, t=30, b=50),
                         bargap=0.15,
-                        xaxis=dict(title=dict(text="Standard Deviation Units (SD = IDR Range)", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_MUTED, size=10), showgrid=False),
-                        yaxis=dict(title=dict(text="Session Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1B2026", showgrid=True),
+                        xaxis=dict(
+                            title=dict(text=dist_title, font=dict(color=TEXT_MUTED, size=11)),
+                            tickmode="array",
+                            tickvals=tickvals,
+                            ticktext=tickvals,
+                            tickfont=dict(color=TEXT_MUTED, size=10),
+                            showgrid=False,
+                        ),
+                        yaxis=dict(
+                            title=dict(text="Count", font=dict(color=TEXT_MUTED, size=11)),
+                            tickfont=dict(color=TEXT_PRIMARY, size=10),
+                            gridcolor="#1B2026",
+                            showgrid=True,
+                        ),
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 else:
@@ -1126,45 +1136,95 @@ def main():
             st.markdown("#### 🔄 False Day Playbook (Opposite Breakout Scenario)")
             st.dataframe(pd.DataFrame(plan.false_day_targets), use_container_width=True, hide_index=True)
 
-            # Price Map Chart
+            st.markdown("#### 📈 Interactive Dynamic SD Price Map & Simulator")
+            sim_state = st.radio(
+                "Simulate Market State",
+                ["⚡ True Day Confirmed (Normal SD Grid)", "⚠️ False Day Reversal Active (Opposite SD Grid)"],
+                index=0,
+                horizontal=True,
+                key="sim_market_state_radio",
+            )
+
             fig_map = go.Figure()
 
-            # Target lines
-            for t in plan.targets:
+            if "True Day" in sim_state:
+                # Target lines
+                for t in plan.targets:
+                    fig_map.add_trace(go.Scatter(
+                        x=[0, 1], y=[t["tp_price"], t["tp_price"]],
+                        mode="lines+text", name=t["sd_level"],
+                        text=["", f"TP {t['sd_level']} ({t['tp_price']:.2f}) - 1:{t['rr_ratio']:.1f} R:R" if "6E" not in live_sym else f"TP {t['sd_level']} ({t['tp_price']:.4f})"],
+                        textposition="middle right",
+                        line=dict(color=TEAL_LIGHT if t["sd_val"] <= 0.5 else "#00C896", width=1.5, dash="dot"),
+                    ))
+
+                # Entry line
                 fig_map.add_trace(go.Scatter(
-                    x=[0, 1], y=[t["tp_price"], t["tp_price"]],
-                    mode="lines+text", name=t["sd_level"],
-                    text=["", f"TP {t['sd_level']} ({t['tp_price']}) - 1:{t['rr_ratio']:.1f} R:R"],
+                    x=[0, 1], y=[plan.entry_price, plan.entry_price],
+                    mode="lines+text", name="Entry",
+                    text=["", f"★ ENTRY ({plan.entry_price:.2f})" if "6E" not in live_sym else f"★ ENTRY ({plan.entry_price:.4f})"],
                     textposition="middle right",
-                    line=dict(color=TEAL_LIGHT if t["sd_val"] <= 0.5 else "#00C896", width=1, dash="dot"),
+                    line=dict(color=TEAL_PRIMARY, width=3),
                 ))
 
-            # Entry line
-            fig_map.add_trace(go.Scatter(
-                x=[0, 1], y=[plan.entry_price, plan.entry_price],
-                mode="lines+text", name="Entry",
-                text=["", f"★ ENTRY ({plan.entry_price})"],
-                textposition="middle right",
-                line=dict(color=TEAL_PRIMARY, width=3),
-            ))
+                # Stop line
+                fig_map.add_trace(go.Scatter(
+                    x=[0, 1], y=[plan.stop_price, plan.stop_price],
+                    mode="lines+text", name="Stop Loss",
+                    text=["", f"🛑 STOP / INVALIDATION ({plan.stop_price:.2f})" if "6E" not in live_sym else f"🛑 STOP / INVALIDATION ({plan.stop_price:.4f})"],
+                    textposition="middle right",
+                    line=dict(color=ACCENT_RED, width=2, dash="dash"),
+                ))
 
-            # Stop line
+                chart_title = "<b>True Day Standard Deviation Projection Grid (+0.5x to +2.0x SD)</b>"
+
+            else:
+                # False Day SD Reversal Grid
+                for ft in plan.false_day_targets:
+                    fig_map.add_trace(go.Scatter(
+                        x=[0, 1], y=[ft["Target Price"], ft["Target Price"]],
+                        mode="lines+text", name=ft["Tier"],
+                        text=["", f"⚠️ {ft['Tier']} ({ft['Target Price']:.2f}) - {ft['Multiplier']}" if "6E" not in live_sym else f"⚠️ {ft['Tier']} ({ft['Target Price']:.4f})"],
+                        textposition="middle right",
+                        line=dict(color="#FF9100" if "Median" in ft["Tier"] else "#FFA726", width=2.5 if "Median" in ft["Tier"] else 1.5, dash="dashdot" if "Median" not in ft["Tier"] else "solid"),
+                    ))
+
+                # Failed Invalidation Level
+                fig_map.add_trace(go.Scatter(
+                    x=[0, 1], y=[plan.stop_price, plan.stop_price],
+                    mode="lines+text", name="Breached DR Boundary",
+                    text=["", f"💥 DR RULE BREACH / FLIP LEVEL ({plan.stop_price:.2f})" if "6E" not in live_sym else f"💥 DR RULE BREACH / FLIP LEVEL ({plan.stop_price:.4f})"],
+                    textposition="middle right",
+                    line=dict(color=ACCENT_RED, width=3),
+                ))
+
+                chart_title = "<b>⚠️ False Day Reversal SD Grid: Median Max Retracement Pushes to 1.95x–2.00x SD in Reverse!</b>"
+
+            # DR Boundaries for Reference
             fig_map.add_trace(go.Scatter(
-                x=[0, 1], y=[plan.stop_price, plan.stop_price],
-                mode="lines+text", name="Stop Loss",
-                text=["", f"🛑 STOP / INVALIDATION ({plan.stop_price})"],
+                x=[0, 1], y=[input_dr_high, input_dr_high],
+                mode="lines+text", name="DR High",
+                text=["", f"DR High ({input_dr_high:.2f})" if "6E" not in live_sym else f"DR High ({input_dr_high:.4f})"],
                 textposition="middle right",
-                line=dict(color=ACCENT_RED, width=2, dash="dash"),
+                line=dict(color="#64748B", width=1, dash="dash"),
+            ))
+            fig_map.add_trace(go.Scatter(
+                x=[0, 1], y=[input_dr_low, input_dr_low],
+                mode="lines+text", name="DR Low",
+                text=["", f"DR Low ({input_dr_low:.2f})" if "6E" not in live_sym else f"DR Low ({input_dr_low:.4f})"],
+                textposition="middle right",
+                line=dict(color="#64748B", width=1, dash="dash"),
             ))
 
             fig_map.update_layout(
+                title=dict(text=chart_title, font=dict(color=TEXT_PRIMARY, size=13)),
                 template="plotly_dark",
                 paper_bgcolor=BG_DARK,
                 plot_bgcolor=BG_DARK,
-                height=320,
+                height=360,
                 showlegend=False,
-                margin=dict(l=10, r=220, t=10, b=10),
-                xaxis=dict(showticklabels=False, showgrid=False, range=[0, 1.4]),
+                margin=dict(l=10, r=260, t=40, b=10),
+                xaxis=dict(showticklabels=False, showgrid=False, range=[0, 1.45]),
                 yaxis=dict(gridcolor="#1B2026", showgrid=True),
             )
             st.plotly_chart(fig_map, use_container_width=True)
