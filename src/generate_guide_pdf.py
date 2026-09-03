@@ -297,9 +297,37 @@ def build_pdf():
     story.append(Spacer(1, 12))
 
     # ============================================================
-    # SECTION 3: QUICK CHEAT SHEET TABLE
+    # SECTION 3: RETRACEMENT DEPTH VS TIME MATRIX
     # ============================================================
-    story.append(Paragraph("3. Quick Reference Decision Matrix", h1_style))
+    story.append(Paragraph("3. Retracement Depth vs. Clock Time Matrix", h1_style))
+    story.append(Paragraph(
+        "A critical breakthrough of the 20-year DR dataset is that specific retracement depths happen at "
+        "statistically distinct clock windows throughout the session:",
+        body_style
+    ))
+
+    ret_time_data = [
+        [Paragraph("<b>Retracement Tier</b>", body_style), Paragraph("<b>RDR (New York) Window</b>", body_style), Paragraph("<b>ODR (London) Window</b>", body_style), Paragraph("<b>Statistical Behavior & Playbook</b>", body_style)],
+        [Paragraph("<b>Shallow (0.0x – 0.2x SD)</b>", body_style), Paragraph("10:30 – 11:30 ET", body_style), Paragraph("04:00 – 05:00 ET", body_style), Paragraph("Fast runner sessions. Occurs right after confirmation.", body_style)],
+        [Paragraph("<b>Standard (0.4x – 0.6x SD)</b>", body_style), Paragraph("11:00 – 12:30 ET", body_style), Paragraph("04:30 – 05:30 ET", body_style), Paragraph("Mid-session pullback. Ideal 50% limit order entry.", body_style)],
+        [Paragraph("<b>Deep (0.6x – 0.8x SD)</b>", body_style), Paragraph("11:30 – 13:30 ET", body_style), Paragraph("05:00 – 06:30 ET", body_style), Paragraph("<b>Golden Entry Zone:</b> Highest R:R limit order fill.", body_style)],
+        [Paragraph("<b>Max Retest (0.8x – 1.0x SD)</b>", body_style), Paragraph("12:00 – 14:00 ET", body_style), Paragraph("05:30 – 07:00 ET", body_style), Paragraph("Final test of opposite IDR boundary before extension.", body_style)],
+        [Paragraph("<b>Breach (>1.00x SD)</b>", body_style), Paragraph("After 13:30 ET", body_style), Paragraph("After 06:30 ET", body_style), Paragraph("False Day trigger. Close position and flip direction.", body_style)],
+    ]
+    t_ret_time = Table(ret_time_data, colWidths=[1.6 * inch, 1.4 * inch, 1.4 * inch, 2.4 * inch])
+    t_ret_time.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), ALERT_BG),
+        ("GRID", (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t_ret_time)
+    story.append(Spacer(1, 12))
+
+    # ============================================================
+    # SECTION 4: QUICK CHEAT SHEET TABLE
+    # ============================================================
+    story.append(Paragraph("4. Quick Reference Decision Matrix", h1_style))
 
     matrix_data = [
         [Paragraph("<b>Market State</b>", body_style), Paragraph("<b>Action / Order Type</b>", body_style), Paragraph("<b>Entry Price Level</b>", body_style), Paragraph("<b>Stop Loss</b>", body_style), Paragraph("<b>Target Exit</b>", body_style)],
@@ -320,9 +348,9 @@ def build_pdf():
     story.append(Spacer(1, 14))
 
     # ============================================================
-    # SECTION 4: GOLDEN RULES FOR DISCIPLINE
+    # SECTION 5: GOLDEN RULES FOR DISCIPLINE
     # ============================================================
-    story.append(Paragraph("4. The 5 Golden Rules of DR Trading", h1_style))
+    story.append(Paragraph("5. The 5 Golden Rules of DR Trading", h1_style))
     story.append(Paragraph("1. <b>Never Enter Before Confirmation:</b> The Defining Range hour (9:30–10:30, 3:00–4:00, 19:30–20:30) is strictly for range building. Entering before confirmation reduces your edge from 81% to a 50/50 coin toss.", bullet_style))
     story.append(Paragraph("2. <b>Never Chase Breakout Wicks:</b> More than 86.9% of confirmed sessions retrace into the IDR. Patiently place your limit orders in the 0.60x–0.80x retracement zone.", bullet_style))
     story.append(Paragraph("3. <b>Respect the Clock:</b> Price and time are inseparable. When the clock hits your session's median extension time, do not greedily seek big runners. Bank profits at 0.50x SD.", bullet_style))

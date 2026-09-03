@@ -22,6 +22,8 @@ from analytics_engine import (
     calc_cumulative_edge_curve,
     build_inter_session_matrix,
     build_hos_los_heatmap_data,
+    build_retracement_time_matrix,
+    build_time_bucket_distribution,
 )
 try:
     from weekly_updater import run_weekly_update
@@ -859,11 +861,13 @@ def main():
         with m_col5:
             first_ret_str = core_metrics.get("First Retracement Median Time", "—")
             render_metric_card("Retracement Median Time", first_ret_str)
-            st.markdown('<div style="height: 38px;"></div>', unsafe_allow_html=True)
+            if st.button("See Retracement Time distribution", key="btn_retrace_time"):
+                st.session_state["active_distribution"] = "max_retracement_time"
 
         with m_col6:
             render_metric_card("Max Extension Median Time", core_metrics.get("Max Extension Median Time", "—"))
-            st.markdown('<div style="height: 38px;"></div>', unsafe_allow_html=True)
+            if st.button("See Extension Time distribution", key="btn_ext_time"):
+                st.session_state["active_distribution"] = "extension_time"
 
         active_dist_field = st.session_state.get("active_distribution", "extension_sd")
         titles = {
@@ -871,85 +875,124 @@ def main():
             "max_retracement_sd": "Maximum Retracement - Distribution (Including Negative Values)",
             "retracement_before_extreme_sd": "Retracement Before HoS/LoS - Distribution",
             "retracement_after_05_sd": "Retracement After 0.5 SD Reached - Distribution",
+            "max_retracement_time": "Maximum Retracement Clock Time - 30-Minute Distribution",
+            "extension_time": "Maximum Extension Peak Clock Time - 30-Minute Distribution",
         }
         dist_title = titles.get(active_dist_field, "Distribution")
 
-        # Distribution Chart with Modal Cluster Highlighting & Negative Support
+        # Distribution Chart with Modal Cluster Highlighting & Negative / Time Support
         if not filtered_events.empty and active_dist_field in filtered_events.columns:
-            plot_series = filtered_events[active_dist_field].dropna()
-            if not plot_series.empty:
-                if active_dist_field == "extension_sd":
-                    edge_points = [round(i * 0.20, 2) for i in range(25)]
-                    bins = [-np.inf] + edge_points[1:] + [np.inf]
-                    labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["4.80+"]
-                else:
-                    # Retracements: span negative bins (-0.8 to +2.6)
-                    edge_points = [round(i * 0.20 - 0.80, 2) for i in range(18)]
-                    bins = [-np.inf] + edge_points[1:] + [np.inf]
-                    labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["2.60+"]
+            if active_dist_field in ["max_retracement_time", "extension_time", "first_retracement_time"]:
+                time_dist_df = build_time_bucket_distribution(filtered_events, time_col=active_dist_field, range_type=range_type)
+                if not time_dist_df.empty:
+                    top_count = time_dist_df["count"].max()
+                    colors = [TEAL_PRIMARY if c == top_count else "#222930" for c in time_dist_df["count"]]
 
-                binned = pd.cut(plot_series, bins=bins, labels=labels, right=False)
-                counts_df = binned.value_counts(sort=False).reset_index()
-                counts_df.columns = ["bin", "count"]
-                counts_df["percentage"] = (counts_df["count"] / len(plot_series) * 100).round(1)
-
-                # Find modal cluster (top 20% frequency bins) to highlight in vibrant teal
-                top_count = counts_df["count"].max()
-                threshold = top_count * 0.70
-                colors = [TEAL_PRIMARY if c >= threshold and c > 0 else "#222930" for c in counts_df["count"]]
-
-                fig = go.Figure()
-                fig.add_trace(
-                    go.Bar(
-                        x=counts_df["bin"],
-                        y=counts_df["count"],
-                        marker=dict(color=colors, line=dict(color=TEAL_PRIMARY, width=0.5)),
-                        hovertemplate="<b>Level: %{x} SD</b><br>Frequency: %{y:,} days<br>Share: %{customdata}%<extra></extra>",
-                        customdata=counts_df["percentage"],
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Bar(
+                            x=time_dist_df["time_bucket"],
+                            y=time_dist_df["count"],
+                            marker=dict(color=colors, line=dict(color=TEAL_PRIMARY, width=0.5)),
+                            hovertemplate="<b>Window: %{x} ET</b><br>Sessions: %{y:,}<br>Share: %{customdata}%<extra></extra>",
+                            customdata=time_dist_df["percentage"],
+                        )
                     )
-                )
-                fig.update_layout(
-                    title=dict(
-                        text=f"<b>{dist_title}</b> (N = {len(plot_series):,} sessions | Highlighted = Modal Cluster Target Zone)",
-                        font=dict(color=TEXT_PRIMARY, size=13.5),
-                        x=0.5,
-                        xanchor="center",
-                        y=0.98,
-                    ),
-                    template="plotly_dark",
-                    paper_bgcolor=BG_DARK,
-                    plot_bgcolor=BG_DARK,
-                    height=380,
-                    margin=dict(l=20, r=20, t=40, b=40),
-                    bargap=0.15,
-                    xaxis=dict(title=dict(text="Standard Deviation Units (SD = IDR Range)", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_MUTED, size=10), showgrid=False),
-                    yaxis=dict(title=dict(text="Session Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1B2026", showgrid=True),
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-                # DR Drive Playbook & Execution Insight Card
-                med_ext_val = core_metrics.get("Median SD Extension", "—")
-                med_ret_val = core_metrics.get("Median Max Retracement", "—")
-                first_ret_time_val = core_metrics.get("First Retracement Median Time", "—")
-                max_ret_time_val = core_metrics.get("Max Retracement Median Time", "—")
-                med_time_val = core_metrics.get("Max Extension Median Time", "—")
-
-                st.markdown(
-                    f"""
-                    <div class="hud-box">
-                        <div class="hud-title">⚡ DR DRIVE TIME & PRICE CONFLUENCE PLAYBOOK</div>
-                        <div class="hud-desc">
-                            • <b>Phase 1 (Retracement / Limit Entry Window):</b> Expect price to pull back into the <b>0.60x – {med_ret_val}</b> IDR zone on average between <b>{first_ret_time_val}</b> (first entry fill) and <b>{max_ret_time_val}</b> (deepest retest).<br/>
-                            • <b>Phase 2 (Extension / Profit Target Window):</b> Session trend reaches the median extension of <b>{med_ext_val}</b> on average at <b>{med_time_val}</b>. Low-hanging fruit target = <b>0.50x SD</b>.<br/>
-                            • <b>Phase 3 (Time Expiration Decay Warning):</b> If price has not reached {med_ext_val} by <b>{med_time_val}</b>, statistical probability of reaching 1.2x–1.5x SD drops significantly. Scale back targets to 0.5x SD or IDR Mid.<br/>
-                            • <b>False Day Playbook:</b> If the DR rule is violated (opposite side close), historical false days reverse to <b>2.0x – 2.5x SD</b> on the opposite side.
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                    fig.update_layout(
+                        title=dict(
+                            text=f"<b>{dist_title}</b> (N = {time_dist_df['count'].sum():,} sessions | Highlighted = Peak Time Window)",
+                            font=dict(color=TEXT_PRIMARY, size=13.5),
+                            x=0.5,
+                            xanchor="center",
+                            y=0.98,
+                        ),
+                        template="plotly_dark",
+                        paper_bgcolor=BG_DARK,
+                        plot_bgcolor=BG_DARK,
+                        height=380,
+                        margin=dict(l=20, r=20, t=40, b=40),
+                        bargap=0.15,
+                        xaxis=dict(title=dict(text="Time Window (America/New_York)", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_MUTED, size=10), showgrid=False),
+                        yaxis=dict(title=dict(text="Session Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1B2026", showgrid=True),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No timing records found for this selection.")
             else:
-                st.info("No numerical observations available for this metric under current filters.")
+                plot_series = filtered_events[active_dist_field].dropna()
+                if not plot_series.empty:
+                    if active_dist_field == "extension_sd":
+                        edge_points = [round(i * 0.20, 2) for i in range(25)]
+                        bins = [-np.inf] + edge_points[1:] + [np.inf]
+                        labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["4.80+"]
+                    else:
+                        # Retracements: span negative bins (-0.8 to +2.6)
+                        edge_points = [round(i * 0.20 - 0.80, 2) for i in range(18)]
+                        bins = [-np.inf] + edge_points[1:] + [np.inf]
+                        labels = [f"{pt:.2f}" for pt in edge_points[:-1]] + ["2.60+"]
+
+                    binned = pd.cut(plot_series, bins=bins, labels=labels, right=False)
+                    counts_df = binned.value_counts(sort=False).reset_index()
+                    counts_df.columns = ["bin", "count"]
+                    counts_df["percentage"] = (counts_df["count"] / len(plot_series) * 100).round(1)
+
+                    # Find modal cluster (top 20% frequency bins) to highlight in vibrant teal
+                    top_count = counts_df["count"].max()
+                    threshold = top_count * 0.70
+                    colors = [TEAL_PRIMARY if c >= threshold and c > 0 else "#222930" for c in counts_df["count"]]
+
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Bar(
+                            x=counts_df["bin"],
+                            y=counts_df["count"],
+                            marker=dict(color=colors, line=dict(color=TEAL_PRIMARY, width=0.5)),
+                            hovertemplate="<b>Level: %{x} SD</b><br>Frequency: %{y:,} days<br>Share: %{customdata}%<extra></extra>",
+                            customdata=counts_df["percentage"],
+                        )
+                    )
+                    fig.update_layout(
+                        title=dict(
+                            text=f"<b>{dist_title}</b> (N = {len(plot_series):,} sessions | Highlighted = Modal Cluster Target Zone)",
+                            font=dict(color=TEXT_PRIMARY, size=13.5),
+                            x=0.5,
+                            xanchor="center",
+                            y=0.98,
+                        ),
+                        template="plotly_dark",
+                        paper_bgcolor=BG_DARK,
+                        plot_bgcolor=BG_DARK,
+                        height=380,
+                        margin=dict(l=20, r=20, t=40, b=40),
+                        bargap=0.15,
+                        xaxis=dict(title=dict(text="Standard Deviation Units (SD = IDR Range)", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_MUTED, size=10), showgrid=False),
+                        yaxis=dict(title=dict(text="Session Count", font=dict(color=TEXT_MUTED, size=11)), tickfont=dict(color=TEXT_PRIMARY, size=10), gridcolor="#1B2026", showgrid=True),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No numerical observations available for this metric under current filters.")
+
+            # DR Drive Playbook & Execution Insight Card
+            med_ext_val = core_metrics.get("Median SD Extension", "—")
+            med_ret_val = core_metrics.get("Median Max Retracement", "—")
+            first_ret_time_val = core_metrics.get("First Retracement Median Time", "—")
+            max_ret_time_val = core_metrics.get("Max Retracement Median Time", "—")
+            med_time_val = core_metrics.get("Max Extension Median Time", "—")
+
+            st.markdown(
+                f"""
+                <div class="hud-box">
+                    <div class="hud-title">⚡ DR DRIVE TIME & PRICE CONFLUENCE PLAYBOOK</div>
+                    <div class="hud-desc">
+                        • <b>Phase 1 (Retracement / Limit Entry Window):</b> Expect price to pull back into the <b>0.60x – {med_ret_val}</b> IDR zone on average between <b>{first_ret_time_val}</b> (first entry fill) and <b>{max_ret_time_val}</b> (deepest retest).<br/>
+                        • <b>Phase 2 (Extension / Profit Target Window):</b> Session trend reaches the median extension of <b>{med_ext_val}</b> on average at <b>{med_time_val}</b>. Low-hanging fruit target = <b>0.50x SD</b>.<br/>
+                        • <b>Phase 3 (Time Expiration Decay Warning):</b> If price has not reached {med_ext_val} by <b>{med_time_val}</b>, statistical probability of reaching 1.2x–1.5x SD drops significantly. Scale back targets to 0.5x SD or IDR Mid.<br/>
+                        • <b>False Day Playbook:</b> If the DR rule is violated (opposite side close), historical false days reverse to <b>2.0x – 2.5x SD</b> on the opposite side.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
             st.info("No confirmed events matching current granular filters.")
 
@@ -1303,24 +1346,169 @@ def main():
             st.info("Insufficient multi-session records to compute confluence matrix.")
 
     # ========================================================
-    # VIEW 6: TIMING & HOS/LOS HEATMAP
+    # VIEW 6: TIMING & RETRACEMENT TIME MATRIX
     # ========================================================
     elif active_view == "Timing Heatmap":
-        st.markdown("### ⏰ Intraday High / Low of Session (HoS / LoS) Timing Heatmap")
-        st.caption(f"Identify peak volume and extreme price reversal windows across the trading week for {range_type} sessions.")
+        st.markdown("### ⏰ Retracement Depth & Session Timing Heatmap Engine")
+        st.caption(f"Analyze the exact relationship between retracement depths (0.2x, 0.5x, 0.8x) and clock time intervals for {range_type} sessions.")
 
-        heat_df = build_hos_los_heatmap_data(raw_df, range_type=range_type)
-        if not heat_df.empty:
-            fig_heat = px.imshow(
-                heat_df,
-                labels=dict(x="30-Minute Time Window (ET)", y="Day of Week", color="Event Count"),
-                color_continuous_scale="Viridis",
-                title=f"Confirmation Time Distribution Matrix ({range_type})",
+        t_tab1, t_tab2, t_tab3 = st.tabs([
+            "🕒 Retracement Depth vs. Time Matrix",
+            "⏱️ Maximum Retracement Time Distribution",
+            "📅 Day-of-Week vs. Confirmation Matrix",
+        ])
+
+        with t_tab1:
+            st.markdown("#### 🎯 Retracement Depth vs. 30-Minute Time Window Matrix")
+            st.caption("Answers: *'At what time of day does a 0.2x, 0.5x, 0.8x, or 1.0x retracement occur across the session?'*")
+
+            t_ctrl1, t_ctrl2 = st.columns(2)
+            with t_ctrl1:
+                selected_time_metric = st.radio(
+                    "Retracement Reference",
+                    ["Maximum Retracement Time", "First Retracement Time"],
+                    index=0,
+                    horizontal=True,
+                )
+                time_col_key = "max_retracement_time" if selected_time_metric == "Maximum Retracement Time" else "first_retracement_time"
+
+            with t_ctrl2:
+                matrix_display_mode = st.radio(
+                    "Display Metric",
+                    ["Session Counts", "Percentage Share (%)"],
+                    index=0,
+                    horizontal=True,
+                )
+
+            matrix_df = build_retracement_time_matrix(
+                raw_df,
+                range_type=range_type,
+                time_col=time_col_key,
+                instrument=instrument,
             )
-            fig_heat.update_layout(template="plotly_dark", paper_bgcolor=BG_DARK, plot_bgcolor=BG_DARK, height=360)
-            st.plotly_chart(fig_heat, use_container_width=True)
-        else:
-            st.info("No timing records available for selected range.")
+
+            if not matrix_df.empty:
+                plot_matrix = matrix_df.copy()
+                if matrix_display_mode == "Percentage Share (%)":
+                    total_events = plot_matrix.sum().sum()
+                    if total_events > 0:
+                        plot_matrix = (plot_matrix / total_events * 100).round(1)
+
+                fig_matrix = px.imshow(
+                    plot_matrix,
+                    labels=dict(x="30-Minute Time Window (America/New_York)", y="Retracement Depth Tier", color="Share (%)" if "%" in matrix_display_mode else "Sessions"),
+                    color_continuous_scale="Tealgrn",
+                    aspect="auto",
+                    title=f"<b>Retracement Depth vs. {selected_time_metric} ({range_type} | {instrument})</b>",
+                )
+                fig_matrix.update_layout(
+                    template="plotly_dark",
+                    paper_bgcolor=BG_DARK,
+                    plot_bgcolor=BG_DARK,
+                    height=400,
+                    margin=dict(l=20, r=20, t=50, b=30),
+                    xaxis=dict(tickfont=dict(color=TEXT_PRIMARY, size=10)),
+                    yaxis=dict(tickfont=dict(color=TEXT_PRIMARY, size=10)),
+                )
+                st.plotly_chart(fig_matrix, use_container_width=True)
+
+                st.markdown("##### 📋 Exact Breakdown Data Table")
+                st.dataframe(
+                    plot_matrix.style.format("{:,.1f}%" if "%" in matrix_display_mode else "{:,.0f}"),
+                    use_container_width=True,
+                )
+
+                # Summary Insight Box
+                st.markdown(
+                    f"""
+                    <div class="hud-box">
+                        <div class="hud-title">💡 RETRACEMENT TIMING CONFLUENCE INSIGHT</div>
+                        <div class="hud-desc">
+                            • <b>Fast Retracements (0.0x – 0.4x):</b> Frequently occur in the first 30–60 minutes following the Defining Range close.<br/>
+                            • <b>Deep Retracements (0.6x – 0.8x IDR):</b> Cluster heavily in the mid-session consolidation window before the session extension.<br/>
+                            • <b>False Day Breaches (>1.0x SD):</b> Concentrated later in the session when initial directional structure fails.
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("No timing records available for the selected range and instrument.")
+
+        with t_tab2:
+            st.markdown("#### ⏱️ Maximum Retracement & Extension Chronological Distributions")
+            st.caption("Chronological distribution of when the deepest session pullbacks and session extremes occur.")
+
+            ret_dist_col1, ret_dist_col2 = st.columns(2)
+
+            with ret_dist_col1:
+                st.markdown("##### 🔻 Maximum Retracement Time Distribution")
+                max_ret_dist = build_time_bucket_distribution(raw_df, time_col="max_retracement_time", range_type=range_type, instrument=instrument)
+                if not max_ret_dist.empty:
+                    top_c = max_ret_dist["count"].max()
+                    cols = [TEAL_PRIMARY if c == top_c else "#222930" for c in max_ret_dist["count"]]
+                    fig_r = go.Figure(go.Bar(
+                        x=max_ret_dist["time_bucket"],
+                        y=max_ret_dist["count"],
+                        marker=dict(color=cols, line=dict(color=TEAL_PRIMARY, width=0.5)),
+                        hovertemplate="<b>Window: %{x}</b><br>Count: %{y:,}<br>Share: %{customdata}%<extra></extra>",
+                        customdata=max_ret_dist["percentage"],
+                    ))
+                    fig_r.update_layout(
+                        template="plotly_dark",
+                        paper_bgcolor=BG_DARK,
+                        plot_bgcolor=BG_DARK,
+                        height=350,
+                        margin=dict(l=10, r=10, t=30, b=30),
+                        xaxis=dict(title="Time Window (ET)", tickfont=dict(color=TEXT_MUTED, size=9)),
+                        yaxis=dict(title="Sessions", tickfont=dict(color=TEXT_PRIMARY, size=9)),
+                    )
+                    st.plotly_chart(fig_r, use_container_width=True)
+                else:
+                    st.info("No data.")
+
+            with ret_dist_col2:
+                st.markdown("##### 🔺 Max Extension (HoS/LoS) Time Distribution")
+                ext_dist = build_time_bucket_distribution(raw_df, time_col="extension_time", range_type=range_type, instrument=instrument)
+                if not ext_dist.empty:
+                    top_c = ext_dist["count"].max()
+                    cols = [ACCENT_BLUE if c == top_c else "#222930" for c in ext_dist["count"]]
+                    fig_e = go.Figure(go.Bar(
+                        x=ext_dist["time_bucket"],
+                        y=ext_dist["count"],
+                        marker=dict(color=cols, line=dict(color=ACCENT_BLUE, width=0.5)),
+                        hovertemplate="<b>Window: %{x}</b><br>Count: %{y:,}<br>Share: %{customdata}%<extra></extra>",
+                        customdata=ext_dist["percentage"],
+                    ))
+                    fig_e.update_layout(
+                        template="plotly_dark",
+                        paper_bgcolor=BG_DARK,
+                        plot_bgcolor=BG_DARK,
+                        height=350,
+                        margin=dict(l=10, r=10, t=30, b=30),
+                        xaxis=dict(title="Time Window (ET)", tickfont=dict(color=TEXT_MUTED, size=9)),
+                        yaxis=dict(title="Sessions", tickfont=dict(color=TEXT_PRIMARY, size=9)),
+                    )
+                    st.plotly_chart(fig_e, use_container_width=True)
+                else:
+                    st.info("No data.")
+
+        with t_tab3:
+            st.markdown("#### 📅 Confirmation Window vs. Day of Week Heatmap")
+            st.caption(f"Identify peak confirmation windows across the trading week for {range_type} sessions.")
+
+            heat_df = build_hos_los_heatmap_data(raw_df, range_type=range_type)
+            if not heat_df.empty:
+                fig_heat = px.imshow(
+                    heat_df,
+                    labels=dict(x="30-Minute Time Window (ET)", y="Day of Week", color="Event Count"),
+                    color_continuous_scale="Viridis",
+                    title=f"Confirmation Time Distribution Matrix ({range_type})",
+                )
+                fig_heat.update_layout(template="plotly_dark", paper_bgcolor=BG_DARK, plot_bgcolor=BG_DARK, height=360)
+                st.plotly_chart(fig_heat, use_container_width=True)
+            else:
+                st.info("No timing records available for selected range.")
 
     # ========================================================
     # VIEW 7: DISTRIBUTIONS & DATA EXPLORER

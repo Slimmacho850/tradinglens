@@ -564,3 +564,103 @@ def build_hos_los_heatmap_data(df: pd.DataFrame, range_type: str = "ADR") -> pd.
 
 # Backwards compatibility alias
 build_hod_lod_heatmap_data = build_hos_los_heatmap_data
+
+
+@st.cache_data(show_spinner=False)
+def build_retracement_time_matrix(
+    df: pd.DataFrame,
+    range_type: str = "RDR",
+    time_col: str = "max_retracement_time",
+    instrument: str = "All",
+) -> pd.DataFrame:
+    """
+    Builds a 2D matrix of Retracement Depth tiers vs 30-minute Time Buckets.
+    Answers: 'When does a 0.2x, 0.5x, 0.8x retracement occur across the trading session?'
+    """
+    if df.empty:
+        return pd.DataFrame()
+
+    sample = df[df["confirmed"] == True].copy()
+
+    if range_type not in ["All", "All Ranges"] and "range_type" in sample.columns:
+        sample = sample[sample["range_type"] == range_type]
+
+    if instrument not in ["All", "All Instruments"] and "instrument" in sample.columns:
+        sample = sample[sample["instrument"] == instrument]
+
+    if time_col not in sample.columns or sample.empty:
+        return pd.DataFrame()
+
+    sample[time_col] = pd.to_datetime(sample[time_col], errors="coerce")
+    sample = sample.dropna(subset=[time_col, "max_retracement_sd"])
+
+    if sample.empty:
+        return pd.DataFrame()
+
+    sample["time_bucket"] = sample[time_col].apply(make_30m_bucket)
+
+    bins = [-np.inf, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, np.inf]
+    labels = ["<0.0x (No IDR Re-entry)", "0.0x – 0.2x SD", "0.2x – 0.4x SD", "0.4x – 0.6x SD", "0.6x – 0.8x SD", "0.8x – 1.0x (Opposite DR)", ">1.0x SD (False Day)"]
+    sample["Retracement Tier"] = pd.cut(sample["max_retracement_sd"], bins=bins, labels=labels, right=False)
+
+    matrix = pd.crosstab(sample["Retracement Tier"], sample["time_bucket"])
+
+    def bucket_sort_key(b_str):
+        if "-" in b_str and len(b_str) >= 5:
+            try:
+                parts = b_str.split("-")[0].split(":")
+                return int(parts[0]) * 60 + int(parts[1])
+            except Exception:
+                return 9999
+        return 9999
+
+    sorted_cols = sorted(matrix.columns, key=bucket_sort_key)
+    return matrix[sorted_cols]
+
+
+@st.cache_data(show_spinner=False)
+def build_time_bucket_distribution(
+    df: pd.DataFrame,
+    time_col: str = "max_retracement_time",
+    range_type: str = "RDR",
+    instrument: str = "All",
+) -> pd.DataFrame:
+    """
+    Computes chronological 30-minute frequency and percentage shares for any timing metric.
+    """
+    if df.empty or time_col not in df.columns:
+        return pd.DataFrame()
+
+    sample = df[df["confirmed"] == True].copy()
+
+    if range_type not in ["All", "All Ranges"] and "range_type" in sample.columns:
+        sample = sample[sample["range_type"] == range_type]
+
+    if instrument not in ["All", "All Instruments"] and "instrument" in sample.columns:
+        sample = sample[sample["instrument"] == instrument]
+
+    sample[time_col] = pd.to_datetime(sample[time_col], errors="coerce")
+    sample = sample.dropna(subset=[time_col])
+
+    if sample.empty:
+        return pd.DataFrame()
+
+    sample["time_bucket"] = sample[time_col].apply(make_30m_bucket)
+    counts = sample["time_bucket"].value_counts().reset_index()
+    counts.columns = ["time_bucket", "count"]
+
+    def bucket_sort_key(b_str):
+        if "-" in b_str and len(b_str) >= 5:
+            try:
+                parts = b_str.split("-")[0].split(":")
+                return int(parts[0]) * 60 + int(parts[1])
+            except Exception:
+                return 9999
+        return 9999
+
+    counts["sort_key"] = counts["time_bucket"].apply(bucket_sort_key)
+    counts = counts.sort_values("sort_key").drop(columns=["sort_key"]).reset_index(drop=True)
+    counts["percentage"] = (counts["count"] / len(sample) * 100).round(1)
+    counts["cumulative_pct"] = counts["percentage"].cumsum().round(1)
+
+    return counts
