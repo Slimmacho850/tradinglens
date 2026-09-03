@@ -23,7 +23,10 @@ from analytics_engine import (
     build_inter_session_matrix,
     build_hos_los_heatmap_data,
 )
-from weekly_updater import run_weekly_update
+try:
+    from weekly_updater import run_weekly_update
+except ImportError:
+    run_weekly_update = None
 
 # ============================================================
 # DR LENS - STATISTICAL TRADING RESEARCH PLATFORM
@@ -663,6 +666,20 @@ def main():
                     st.rerun()
                 else:
                     st.warning("Sync finished with no new data.")
+
+        st.divider()
+        st.markdown("#### 📖 Field Manual & PDF Guide")
+        pdf_file = ROOT / "DR_Lens_Comprehensive_Trading_Guide.pdf"
+        if not pdf_file.exists():
+            pdf_file = ROOT / "trading lens" / "DR_Lens_Comprehensive_Trading_Guide.pdf"
+        if pdf_file.exists():
+            with open(pdf_file, "rb") as f:
+                st.download_button(
+                    label="📥 Download PDF Trading Guide",
+                    data=f.read(),
+                    file_name="DR_Lens_Comprehensive_Trading_Guide.pdf",
+                    mime="application/pdf",
+                )
 
         st.caption(f"Historical Sample: **{len(raw_df):,}** sessions")
         st.caption(f"Active Range: **{range_type}** | Contract: **{instrument}**")

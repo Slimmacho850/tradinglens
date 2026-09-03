@@ -19,7 +19,11 @@ if str(_SRC_DIR) not in sys.path:
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
+
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
 
 # Import core dataset processor from historical_events_2024
 from historical_events_2024 import (
@@ -78,6 +82,10 @@ def fetch_symbol_m1(ticker: str, days: int = 7) -> pd.DataFrame:
     """
     Downloads 1-minute candlestick data from Yahoo Finance in America/New_York timezone.
     """
+    if yf is None:
+        print(f"  ⚠️ 'yfinance' is not installed in the environment. Skipping live download for {ticker}.", flush=True)
+        return pd.DataFrame()
+
     try:
         df = yf.download(ticker, period=f"{days}d", interval="1m", progress=False)
         if df.empty:
