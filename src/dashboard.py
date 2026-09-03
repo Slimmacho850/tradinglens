@@ -23,6 +23,7 @@ from analytics_engine import (
     build_inter_session_matrix,
     build_hos_los_heatmap_data,
 )
+from weekly_updater import run_weekly_update
 
 # ============================================================
 # DR LENS - STATISTICAL TRADING RESEARCH PLATFORM
@@ -524,6 +525,16 @@ def calc_core_metrics(df: pd.DataFrame) -> dict[str, str]:
     else:
         res["Median Retracement after 0.5 SD reached"] = "—"
 
+    if "first_retracement_time" in df.columns:
+        res["First Retracement Median Time"] = median_clock(df["first_retracement_time"])
+    else:
+        res["First Retracement Median Time"] = "—"
+
+    if "max_retracement_time" in df.columns:
+        res["Max Retracement Median Time"] = median_clock(df["max_retracement_time"])
+    else:
+        res["Max Retracement Median Time"] = "—"
+
     if "extension_time" in df.columns:
         res["Max Extension Median Time"] = median_clock(df["extension_time"])
     else:
@@ -641,6 +652,18 @@ def main():
             last_x_val = st.slider("Number of recent sessions", min_value=50, max_value=2000, value=250, step=50)
 
         st.divider()
+        st.markdown("#### 🔄 Weekly Maintenance")
+        st.caption("Auto-ingests past week's 1m data for ES, NQ, GC, YM, 6E and updates the master database.")
+        if st.button("⚡ Sync Past Week Data", key="btn_sync_week_sidebar"):
+            with st.spinner("Fetching latest market data & recomputing Defining Ranges..."):
+                sync_res = run_weekly_update(days_back=7)
+                if sync_res.get("status") == "success":
+                    st.success(f"✓ Synced! Database now has {sync_res['total_sessions']:,} sessions (Up to {sync_res['max_date']}).")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.warning("Sync finished with no new data.")
+
         st.caption(f"Historical Sample: **{len(raw_df):,}** sessions")
         st.caption(f"Active Range: **{range_type}** | Contract: **{instrument}**")
 
@@ -794,7 +817,7 @@ def main():
         st.markdown("<hr/>", unsafe_allow_html=True)
 
         core_metrics = calc_core_metrics(filtered_events)
-        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+        m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
 
         with m_col1:
             render_metric_card("Median SD Extension", core_metrics.get("Median SD Extension", "—"))
@@ -812,11 +835,16 @@ def main():
                 st.session_state["active_distribution"] = "retracement_before_extreme_sd"
 
         with m_col4:
-            render_metric_card("Median Retracement after 0.5 SD reached", core_metrics.get("Median Retracement after 0.5 SD reached", "—"))
+            render_metric_card("Median Retracement after 0.5 SD", core_metrics.get("Median Retracement after 0.5 SD reached", "—"))
             if st.button("See after 0.5 SD distribution", key="btn_05"):
                 st.session_state["active_distribution"] = "retracement_after_05_sd"
 
         with m_col5:
+            first_ret_str = core_metrics.get("First Retracement Median Time", "—")
+            render_metric_card("Retracement Median Time", first_ret_str)
+            st.markdown('<div style="height: 38px;"></div>', unsafe_allow_html=True)
+
+        with m_col6:
             render_metric_card("Max Extension Median Time", core_metrics.get("Max Extension Median Time", "—"))
             st.markdown('<div style="height: 38px;"></div>', unsafe_allow_html=True)
 
@@ -885,17 +913,19 @@ def main():
                 # DR Drive Playbook & Execution Insight Card
                 med_ext_val = core_metrics.get("Median SD Extension", "—")
                 med_ret_val = core_metrics.get("Median Max Retracement", "—")
+                first_ret_time_val = core_metrics.get("First Retracement Median Time", "—")
+                max_ret_time_val = core_metrics.get("Max Retracement Median Time", "—")
                 med_time_val = core_metrics.get("Max Extension Median Time", "—")
 
                 st.markdown(
                     f"""
                     <div class="hud-box">
-                        <div class="hud-title">⚡ DR DRIVE PLAYBOOK & EXECUTION CONFLUENCE</div>
+                        <div class="hud-title">⚡ DR DRIVE TIME & PRICE CONFLUENCE PLAYBOOK</div>
                         <div class="hud-desc">
-                            • <b>Optimal Entry Trigger:</b> Target limit retracement between <b>0.60x and {med_ret_val}</b> into IDR after confirmation.<br/>
-                            • <b>Target Expectation:</b> Median extension is <b>{med_ext_val}</b>. Low-hanging fruit target = <b>0.50x SD</b>.<br/>
-                            • <b>Time Expiration Decay:</b> Peak session high/low occurs on average at <b>{med_time_val}</b>. If price has not reached {med_ext_val} by this time, scale back targets to 0.5x SD or IDR Mid.<br/>
-                            • <b>False Day Playbook:</b> If DR rule fails (closing beyond opposite DR), historical false days reverse to <b>2.0x – 2.5x SD</b> in the opposite direction.
+                            • <b>Phase 1 (Retracement / Limit Entry Window):</b> Expect price to pull back into the <b>0.60x – {med_ret_val}</b> IDR zone on average between <b>{first_ret_time_val}</b> (first entry fill) and <b>{max_ret_time_val}</b> (deepest retest).<br/>
+                            • <b>Phase 2 (Extension / Profit Target Window):</b> Session trend reaches the median extension of <b>{med_ext_val}</b> on average at <b>{med_time_val}</b>. Low-hanging fruit target = <b>0.50x SD</b>.<br/>
+                            • <b>Phase 3 (Time Expiration Decay Warning):</b> If price has not reached {med_ext_val} by <b>{med_time_val}</b>, statistical probability of reaching 1.2x–1.5x SD drops significantly. Scale back targets to 0.5x SD or IDR Mid.<br/>
+                            • <b>False Day Playbook:</b> If the DR rule is violated (opposite side close), historical false days reverse to <b>2.0x – 2.5x SD</b> on the opposite side.
                         </div>
                     </div>
                     """,

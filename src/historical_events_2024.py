@@ -60,6 +60,8 @@ def infer_instrument(filename: str) -> str:
         return "ES"
     if any(k in upper for k in ["YM", "MYM", "DOW", "US30"]):
         return "YM"
+    if any(k in upper for k in ["EURUSD", "6E", "EUR"]):
+        return "6E"
     if any(k in upper for k in ["RTY", "M2K", "US2000"]):
         return "RTY"
     return upper.split("_")[0] if "_" in upper else "NQ"
